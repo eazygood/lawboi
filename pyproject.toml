@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lawboi"
+version = "0.1.0"
+description = "Source-cited Estonian legal RAG chatbot"
+requires-python = ">=3.12"
+
+# Runtime dependencies are pinned in requirements.txt (the install source for both
+# local dev and the Docker image). pyproject intentionally declares none so the two
+# never drift — install deps with `pip install -r requirements.txt`, then link the
+# package with `pip install -e . --no-deps`.
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

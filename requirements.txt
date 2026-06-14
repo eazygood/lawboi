@@ -1,0 +1,24 @@
+# Core
+fastapi>=0.115
+slowapi>=0.1.9
+uvicorn[standard]>=0.30
+pydantic>=2.0
+pydantic-settings>=2.0
+python-dotenv>=1.0
+psycopg2-binary>=2.9
+requests>=2.32
+
+# LlamaIndex + LLM providers
+llama-index-core>=0.12
+llama-index-llms-gemini
+llama-index-llms-openai>=0.3
+llama-index-llms-anthropic>=0.4
+llama-index-postprocessor-cohere-rerank>=0.3
+
+# Embeddings (local, via sentence-transformers)
+sentence-transformers>=3.0
+
+# Testing
+pytest>=8.0
+pytest-cov>=5.0
+responses>=0.25

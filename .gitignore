@@ -1,0 +1,9 @@
+.venv
+.pytest_cache
+.ropeproject
+.env
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.egg-info/

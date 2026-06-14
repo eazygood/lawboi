@@ -1,0 +1,16 @@
+.venv
+.git
+.pytest_cache
+.ropeproject
+__pycache__
+**/__pycache__
+*.pyc
+.env
+ui/node_modules
+ui/.next
+tests
+eval
+docs
+*.png
+*.drawio
+*.log

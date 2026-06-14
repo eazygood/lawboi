@@ -1,0 +1,82 @@
+[
+  {
+    "id": "gs-001",
+    "category": "exact_lookup",
+    "query": "Mis ütleb töölepingu seaduse § 1?",
+    "expected_citations": [{"eli": "RT I 2009, 5, 35", "section": "1"}],
+    "expected_answer_contains": ["reguleerimisala"],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-002",
+    "category": "current_law",
+    "query": "What is the minimum notice period for terminating an employment contract?",
+    "expected_citations": [{"eli": "RT I 2009, 5, 35", "section": "97"}],
+    "expected_answer_contains": ["notice", "days"],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-003",
+    "category": "current_law",
+    "query": "Kui pikk on katseaeg töölepingus?",
+    "expected_citations": [{"eli": "RT I 2009, 5, 35", "section": "86"}],
+    "expected_answer_contains": ["katseaeg", "kuud"],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-004",
+    "category": "unsupported",
+    "query": "Kes võidab kohtuvaidluse minu tööandja vastu?",
+    "expected_citations": [],
+    "expected_answer_contains": [],
+    "should_refuse": true
+  },
+  {
+    "id": "gs-005",
+    "category": "unsupported",
+    "query": "What will the Supreme Court decide on my case?",
+    "expected_citations": [],
+    "expected_answer_contains": [],
+    "should_refuse": true
+  },
+  {
+    "id": "gs-006",
+    "category": "missing_fact",
+    "query": "Am I entitled to severance pay?",
+    "expected_citations": [],
+    "expected_answer_contains": ["depends", "reason", "circumstances"],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-007",
+    "category": "current_law",
+    "query": "What is the corporate income tax rate in Estonia?",
+    "expected_citations": [{"eli": "RT I 2000, 102, 667", "section": "4"}],
+    "expected_answer_contains": ["tax", "rate", "percent"],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-008",
+    "category": "exact_lookup",
+    "query": "§ 203 äriseadustiku järgi",
+    "expected_citations": [{"eli": "RT I 1995, 26, 355", "section": "203"}],
+    "expected_answer_contains": [],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-009",
+    "category": "current_law",
+    "query": "Millised on tööandja kohustused tööohutuse tagamisel?",
+    "expected_citations": [],
+    "expected_answer_contains": ["tööandja", "kohustus"],
+    "should_refuse": false
+  },
+  {
+    "id": "gs-010",
+    "category": "current_law",
+    "query": "What are the VAT registration requirements in Estonia?",
+    "expected_citations": [],
+    "expected_answer_contains": ["VAT", "registration", "threshold"],
+    "should_refuse": false
+  }
+]
