@@ -127,7 +127,9 @@ def wait_healthy(dc, timeout=60):
             if status == "healthy":
                 return
         time.sleep(2)
-    run_q(dc + ["logs", "--tail", "20", "db"])
+    r = subprocess.run(dc + ["logs", "--tail", "20", "db"],
+                       cwd=ROOT, capture_output=True, text=True)
+    print(r.stdout + r.stderr, end="")
     die("db did not become healthy.")
 
 
@@ -270,8 +272,13 @@ def start_api():
     info("Waiting for /health (first run loads the e5 model, ~30s)...")
     if not _wait_for_url(f"{API_URL}/health"):
         try:
+            os.kill(p.pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+        API_PIDF.unlink(missing_ok=True)
+        try:
             lines = API_LOG.read_text().splitlines()[-30:]
-            print("\n".join(lines), file=sys.stderr)
+            print("\n".join(lines))
         except Exception:
             pass
         die("/health never came up.")
