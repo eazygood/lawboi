@@ -14,7 +14,7 @@ _SEARCH_URL = f"{RT_BASE_URL}/api/oigusakt_otsing/1/otsi"
 # Document types crawled by the full-corpus ingest. määrus (~91k version-rows,
 # mostly off-domain for accountants) is intentionally excluded for now — adding
 # it later is a one-element change here.
-CORPUS_DOC_TYPES = ("seadus", "korraldus", "otsus")
+CORPUS_DOC_TYPES = ("seadus", "määrus")
 
 
 def compute_hash(content: bytes) -> str:

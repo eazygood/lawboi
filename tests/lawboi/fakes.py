@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from lawboi.domain.models import Act, ActVersion, Provision
@@ -62,7 +62,17 @@ class InMemoryStructuredStore:
         version.id = vid
         self._versions[vid] = version
         self._version_keys[key] = vid
+        # Close prior open versions of the same act, mirroring the Postgres upsert.
+        for v in self._versions.values():
+            if (v.id != vid and v.act_id == version.act_id
+                    and v.effective_to is None
+                    and v.effective_from < version.effective_from):
+                v.effective_to = version.effective_from - timedelta(days=1)
         return vid
+
+    def ingested_global_ids(self) -> set[int]:
+        return {v.source_global_id for v in self._versions.values()
+                if v.source_global_id is not None}
 
     def insert_provision(self, provision: Provision) -> int:
         pid = self._id()

@@ -21,6 +21,7 @@ class ActVersion:
     effective_to: Optional[date]
     source_url: str
     source_hash: str
+    source_global_id: Optional[int] = None
 
 
 @dataclass

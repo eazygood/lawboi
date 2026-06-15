@@ -84,16 +84,19 @@ def run_ingest(query: str) -> None:
             print(f"    No provisions parsed for {gid} — skipping.")
             continue
         act = Act(None, eli, title_xml, None, "general", "seadus")
-        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash)
+        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
+                             source_global_id=gid)
         chunks = chunk_provisions(provisions, act_title=title_xml, eli=eli)
         container.ingest.index_act(act, version, provisions, chunks)
         print(f"    Indexed {len(provisions)} provisions.")
 
 
-def run_corpus(doc_types=CORPUS_DOC_TYPES) -> None:
+def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
     """Crawl the full corpus for the given document types and ingest the
-    current in-force text of each distinct act. Idempotent: re-running skips
-    acts whose current version already has provisions (IngestService gate)."""
+    current in-force text of each distinct act. Incremental by default:
+    redaktsioonid whose globaalID is already ingested are skipped before the
+    XML fetch, so re-runs only download new or amended acts. Pass force=True to
+    re-fetch every act (e.g. after a parser or embedding change)."""
     container = build_container(Settings())
     source = RiigiTeatajaSource()
     today = date.today()
@@ -101,9 +104,14 @@ def run_corpus(doc_types=CORPUS_DOC_TYPES) -> None:
     print(f"Crawling corpus index for {list(doc_types)}...")
     current = select_current_versions(source.iter_corpus(doc_types), today)
     total = len(current)
+    seen = set() if force else container.store.ingested_global_ids()
+    skipped = 0
     print(f"{total} distinct acts after dedup. Ingesting current text of each...")
 
     for i, (tid, m) in enumerate(sorted(current.items()), 1):
+        if not force and m.global_id in seen:
+            skipped += 1
+            continue
         eli = str(tid)
         try:
             raw = source.fetch(m.global_id)
@@ -122,18 +130,21 @@ def run_corpus(doc_types=CORPUS_DOC_TYPES) -> None:
             print(f"  [{i}/{total}] {title}: no provisions parsed — skipping.")
             continue
         act = Act(None, eli, title, None, "general", m.liik or "seadus")
-        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash)
+        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
+                             source_global_id=m.global_id)
         chunks = chunk_provisions(provisions, act_title=title, eli=eli)
         container.ingest.index_act(act, version, provisions, chunks)
         print(f"  [{i}/{total}] {title}: {len(provisions)} provisions.")
+
+    print(f"Done. Ingested {total - skipped}, skipped {skipped} unchanged.")
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if not args:
-        print("Usage: python -m lawboi.ingest <query|globaalID> | --all")
+        print("Usage: python -m lawboi.ingest <query|globaalID> | --all [--force]")
         sys.exit(1)
     if args[0] == "--all":
-        run_corpus()
+        run_corpus(force="--force" in args[1:])
     else:
         run_ingest(args[0])

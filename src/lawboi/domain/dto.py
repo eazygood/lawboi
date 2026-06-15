@@ -29,7 +29,7 @@ class ActMeta:
     effective_to: Optional[date]
     # Populated by the corpus crawl; left None on plain search results.
     tervik_id: Optional[int] = None  # stable act identity (across versions)
-    liik: Optional[str] = None       # document type: seadus | korraldus | otsus
+    liik: Optional[str] = None       # document type: seadus | määrus
     lyhend: Optional[str] = None     # abbreviation, when the act has one
     modified: Optional[int] = None   # `muudetud` epoch-millis change signal
 

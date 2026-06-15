@@ -98,7 +98,7 @@ cd ui && nvm use && npm install && npm run dev
 
 ### 3. Ingest laws
 
-With Postgres running, ingest an act by abbreviation, title substring, or numeric globaalID:
+With Postgres running, ingest a single act by abbreviation, title substring, or numeric globaalID:
 
 ```bash
 python -m lawboi.ingest "TLS"
@@ -106,7 +106,33 @@ python -m lawboi.ingest "töölepingu seadus"
 python -m lawboi.ingest 13198023
 ```
 
-Re-running the same act is safe — existing versions are skipped.
+Or crawl the whole corpus and ingest the current in-force text of every act. By default
+this covers acts (`seadus`) and regulations/decrees (`määrus`) — the binding primary and
+secondary legislation (configurable via `CORPUS_DOC_TYPES`):
+
+```bash
+python -m lawboi.ingest --all
+```
+
+> `määrus` is a large category (many thousands of regulations), so the first full crawl
+> takes hours and produces a large embedding set. Run it once locally, then ship the
+> validated dataset with `pg_dump`/`pg_restore` (see [Deployment](#deployment)) and let
+> incremental re-runs keep it current.
+
+**Incremental by default.** Each act's ingested Riigi Teataja redaktsioon is tracked by
+its `globaalID` (`act_version.source_global_id`). On re-runs, `--all` pages the corpus
+index but **skips already-ingested acts before downloading their XML**, so only new or
+amended acts are fetched and embedded. It prints `ingested N, skipped M unchanged`. This
+makes `--all` safe and cheap to run on a schedule (e.g. a nightly cron). When a new
+redaktsioon is ingested, the prior version's `effective_to` is closed automatically so
+date-filtered retrieval returns only the current text.
+
+Use `--all --force` to re-fetch and re-embed every act regardless of the skip set — only
+needed after a parser or embedding change.
+
+> **Existing databases:** the skip set relies on the `act_version.source_global_id`
+> column. Fresh installs get it from `db/schema.sql`; apply it to an already-initialised
+> DB before ingesting with `psql "$DATABASE_URL" -f db/migrations/001_source_global_id.sql`.
 
 > **Note:** The RT API endpoint format (`RT_BASE_URL` in `.env`) should be verified against real Riigiteataja responses before running at scale.
 

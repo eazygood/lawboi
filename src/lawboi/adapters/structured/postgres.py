@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from lawboi.adapters.structured.pool import pooled_cursor
@@ -34,8 +34,9 @@ class PostgresStore:
                 return row[0]
             cur.execute(
                 """
-                INSERT INTO act_version (act_id, effective_from, effective_to, source_url, source_hash)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO act_version (act_id, effective_from, effective_to,
+                                         source_url, source_hash, source_global_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
             """,
                 (
@@ -44,9 +45,23 @@ class PostgresStore:
                     version.effective_to,
                     version.source_url,
                     version.source_hash,
+                    version.source_global_id,
                 ),
             )
-            return cur.fetchone()[0]
+            version_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                UPDATE act_version SET effective_to = %s
+                 WHERE act_id = %s AND effective_to IS NULL
+                   AND effective_from < %s
+            """,
+                (
+                    version.effective_from - timedelta(days=1),
+                    version.act_id,
+                    version.effective_from,
+                ),
+            )
+            return version_id
 
     def insert_provision(self, provision: Provision) -> int:
         with pooled_cursor(self._pool) as cur:
@@ -66,6 +81,12 @@ class PostgresStore:
                 ),
             )
             return cur.fetchone()[0]
+
+    def ingested_global_ids(self) -> set[int]:
+        with pooled_cursor(self._pool) as cur:
+            cur.execute("SELECT source_global_id FROM act_version "
+                        "WHERE source_global_id IS NOT NULL")
+            return {r[0] for r in cur.fetchall()}
 
     def version_has_provisions(self, act_version_id: int) -> bool:
         with pooled_cursor(self._pool) as cur:
@@ -90,7 +111,7 @@ class PostgresStore:
             cur.execute(
                 """
                 SELECT av.id, av.act_id, av.effective_from, av.effective_to,
-                       av.source_url, av.source_hash
+                       av.source_url, av.source_hash, av.source_global_id
                 FROM act_version av JOIN act a ON av.act_id = a.id
                 WHERE a.eli = %s ORDER BY av.effective_from DESC
             """,
@@ -99,7 +120,7 @@ class PostgresStore:
             rows = cur.fetchall()
         return [
             ActVersion(id=r[0], act_id=r[1], effective_from=r[2], effective_to=r[3],
-                       source_url=r[4], source_hash=r[5])
+                       source_url=r[4], source_hash=r[5], source_global_id=r[6])
             for r in rows
         ]
 

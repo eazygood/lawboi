@@ -15,8 +15,12 @@ CREATE TABLE IF NOT EXISTS act_version (
     effective_from DATE NOT NULL,
     effective_to   DATE,
     source_url     TEXT NOT NULL,
-    source_hash    TEXT NOT NULL
+    source_hash    TEXT NOT NULL,
+    source_global_id BIGINT
 );
+
+CREATE INDEX IF NOT EXISTS act_version_source_global_id_idx
+    ON act_version (source_global_id);
 
 CREATE TABLE IF NOT EXISTS provision (
     id             SERIAL PRIMARY KEY,
