@@ -42,7 +42,7 @@ else:
 def info(msg): print(f"{DIM}==>{NC} {msg}", flush=True)
 def ok(msg):   print(f"{GRN} PASS {NC} {msg}", flush=True)
 def warn(msg): print(f"{YEL} WARN {NC} {msg}", flush=True)
-def die(msg):  print(f"{RED} FAIL {NC} {msg}", file=sys.stderr, flush=True); sys.exit(1)
+def die(msg):  print(f"{RED} FAIL {NC} {msg}", flush=True); sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
