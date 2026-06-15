@@ -22,13 +22,13 @@ endpoints, and hands the user what to try by hand.
    - If a key is present, continue — the API inherits it.
    - If none is present, **ask the user once** for their key (and which provider), then
      pass it inline on the run command in step 1 (env vars don't persist across separate
-     shell invocations), e.g. `OPENAI_API_KEY=sk-... python scripts/dev.py`. Do **not**
+     shell invocations), e.g. `OPENAI_API_KEY=sk-... python3 scripts/dev.py`. Do **not**
      write the key into `.env`.
 
 1. Bring the environment up from the repo root:
 
    ```bash
-   python scripts/dev.py
+   python3 scripts/dev.py
    ```
 
    It is idempotent and safe to re-run. What it does:
@@ -47,14 +47,14 @@ endpoints, and hands the user what to try by hand.
 2. Verify the live endpoints (reuses the running API, won't restart it):
 
    ```bash
-   python scripts/dev.py --smoke
+   python3 scripts/dev.py --smoke
    ```
 
    Read the PASS / WARN / FAIL lines:
    - **`/health` or `/models` FAIL** → app or config broken. Surface the tail of
      `/tmp/lawboi_api.log` and stop.
    - **`/search` WARN (0 hits)** or **`/answer` WARN (422)** → app works, corpus
-     empty. Suggest `python -m lawboi.ingest "TLS"` (sample) or `python scripts/dev.py --full`.
+     empty. Suggest `python -m lawboi.ingest "TLS"` (sample) or `python3 scripts/dev.py --full`.
    - **All PASS** → report the model in use and the citation count.
 
 3. Report the result and hand the user the manual-test cheatsheet below. Do **not**
@@ -70,7 +70,7 @@ Once up, the user can test by hand:
 - **Answer**: `curl -s -XPOST localhost:8000/answer -H 'content-type: application/json' -d '{"query":"Töölepingu seadus § 86"}' | jq .`
 - **Search**: `curl -s -XPOST localhost:8000/search -H 'content-type: application/json' -d '{"query":"puhkus","limit":5}' | jq .`
 - **Ingest more**: `python -m lawboi.ingest "<abbreviation or title>"` (incremental; re-runs skip unchanged acts).
-- **Tear down**: `python scripts/dev.py --down`.
+- **Tear down**: `python3 scripts/dev.py --down`.
 
 ## Notes
 
@@ -83,4 +83,4 @@ Once up, the user can test by hand:
 - Logs: API → `/tmp/lawboi_api.log`, UI → `/tmp/lawboi_ui.log`. The `db` volume and
   ingested data persist between runs.
 - Servers are left running on purpose (for manual testing) and are **not** killed on
-  script exit — always stop them with `python scripts/dev.py --down`.
+  script exit — always stop them with `python3 scripts/dev.py --down`.
