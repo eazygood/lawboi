@@ -328,6 +328,8 @@ def _req(method, path, body=None):
         except Exception:
             payload = None
         return e.code, payload
+    except urllib.error.URLError as e:
+        return 0, str(e.reason)
 
 
 def run_smoke():
