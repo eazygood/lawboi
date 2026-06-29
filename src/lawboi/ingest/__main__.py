@@ -4,7 +4,7 @@ from datetime import date
 from dotenv import load_dotenv
 load_dotenv()
 
-from lawboi.config.settings import load_settings
+from lawboi.config.settings import Settings
 from lawboi.config.composition import build_container
 from lawboi.adapters.source.riigiteataja import RiigiTeatajaSource
 from lawboi.adapters.source.parser import (
@@ -48,7 +48,7 @@ def _is_better(candidate: ActMeta, incumbent: ActMeta, on: date) -> bool:
 
 
 def run_ingest(query: str) -> None:
-    container = build_container(load_settings())
+    container = build_container(Settings())
     source = RiigiTeatajaSource()
 
     if query.isdigit():
@@ -97,7 +97,7 @@ def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
     redaktsioonid whose globaalID is already ingested are skipped before the
     XML fetch, so re-runs only download new or amended acts. Pass force=True to
     re-fetch every act (e.g. after a parser or embedding change)."""
-    container = build_container(load_settings())
+    container = build_container(Settings())
     source = RiigiTeatajaSource()
     today = date.today()
 
