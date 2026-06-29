@@ -1,5 +1,5 @@
 from datetime import date
-from lawboi.adapters.source.parser import parse_act_xml
+from lawboi.adapters.source.parser import parse_act_xml, parse_act
 from lawboi.domain.models import Provision
 
 SAMPLE_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -60,3 +60,28 @@ def test_parse_levels():
                                 effective_from=date(2009, 7, 1), effective_to=None)
     levels = {p.level for p in provisions}
     assert "section" in levels
+
+
+FULL_SAMPLE_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<akt>
+  <metaandmed>
+    <pealkiri keel="et">Toolepingu seadus</pealkiri>
+    <kehtivus>
+      <kehtivuseAlgus>2009-07-01</kehtivuseAlgus>
+    </kehtivus>
+  </metaandmed>
+  <sisu>
+    <paragrahv nr="1">
+      <loige nr="1"><tekst>Kaeesolev seadus reguleerib toolepingu.</tekst></loige>
+    </paragrahv>
+  </sisu>
+</akt>"""
+
+
+def test_parse_act_returns_all_fields():
+    result = parse_act(FULL_SAMPLE_XML, act_version_id=7)
+    assert result.title == "Toolepingu seadus"
+    assert result.effective_from is not None
+    assert result.effective_to is None
+    assert len(result.provisions) == 1
+    assert result.provisions[0].act_version_id == 7

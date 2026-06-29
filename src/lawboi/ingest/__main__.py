@@ -7,9 +7,7 @@ load_dotenv()
 from lawboi.config.settings import Settings
 from lawboi.config.composition import build_container
 from lawboi.adapters.source.riigiteataja import RiigiTeatajaSource
-from lawboi.adapters.source.parser import (
-    parse_act_xml, parse_act_title, parse_effective_date,
-)
+from lawboi.adapters.source.parser import parse_act
 from lawboi.ingest.chunker import chunk_provisions
 from lawboi.domain.models import Act, ActVersion
 from lawboi.domain.dto import ActMeta
@@ -72,23 +70,21 @@ def run_ingest(query: str) -> None:
         print(f"  Fetching globaalID={gid} ({titles[gid]})...")
         raw = source.fetch(gid)
         source_hash = compute_hash(raw.xml)
-        eff_from_xml, eff_to_xml = parse_effective_date(raw.xml)
-        title_xml = parse_act_title(raw.xml) or titles[gid]
-        eff_from = eff_from_xml or froms.get(gid) or date.today()
-        eff_to = eff_to_xml or tos.get(gid)
+        parsed = parse_act(raw.xml, act_version_id=0)
+        title_xml = parsed.title or titles[gid]
+        eff_from = parsed.effective_from or froms.get(gid) or date.today()
+        eff_to = parsed.effective_to or tos.get(gid)
         eli = str(gid)
 
-        provisions = parse_act_xml(raw.xml, act_version_id=0,
-                                   effective_from=eff_from, effective_to=eff_to)
-        if not provisions:
+        if not parsed.provisions:
             print(f"    No provisions parsed for {gid} — skipping.")
             continue
         act = Act(None, eli, title_xml, None, "general", "seadus")
         version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
                              source_global_id=gid)
-        chunks = chunk_provisions(provisions, act_title=title_xml, eli=eli)
-        container.ingest.index_act(act, version, provisions, chunks)
-        print(f"    Indexed {len(provisions)} provisions.")
+        chunks = chunk_provisions(parsed.provisions, act_title=title_xml, eli=eli)
+        container.ingest.index_act(act, version, parsed.provisions, chunks)
+        print(f"    Indexed {len(parsed.provisions)} provisions.")
 
 
 def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
@@ -119,22 +115,20 @@ def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
             print(f"  [{i}/{total}] {m.title}: fetch failed — {e}")
             continue
         source_hash = compute_hash(raw.xml)
-        eff_from_xml, eff_to_xml = parse_effective_date(raw.xml)
-        title = parse_act_title(raw.xml) or m.title
-        eff_from = eff_from_xml or m.effective_from or today
-        eff_to = eff_to_xml or m.effective_to
+        parsed = parse_act(raw.xml, act_version_id=0)
+        title = parsed.title or m.title
+        eff_from = parsed.effective_from or m.effective_from or today
+        eff_to = parsed.effective_to or m.effective_to
 
-        provisions = parse_act_xml(raw.xml, act_version_id=0,
-                                   effective_from=eff_from, effective_to=eff_to)
-        if not provisions:
+        if not parsed.provisions:
             print(f"  [{i}/{total}] {title}: no provisions parsed — skipping.")
             continue
         act = Act(None, eli, title, None, "general", m.liik or "seadus")
         version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
                              source_global_id=m.global_id)
-        chunks = chunk_provisions(provisions, act_title=title, eli=eli)
-        container.ingest.index_act(act, version, provisions, chunks)
-        print(f"  [{i}/{total}] {title}: {len(provisions)} provisions.")
+        chunks = chunk_provisions(parsed.provisions, act_title=title, eli=eli)
+        container.ingest.index_act(act, version, parsed.provisions, chunks)
+        print(f"  [{i}/{total}] {title}: {len(parsed.provisions)} provisions.")
 
     print(f"Done. Ingested {total - skipped}, skipped {skipped} unchanged.")
 

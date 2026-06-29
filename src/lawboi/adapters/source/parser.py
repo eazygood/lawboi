@@ -1,5 +1,6 @@
 import io
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional
 
@@ -132,3 +133,66 @@ def parse_act_xml(
         _parse_section(section_el, act_version_id, None, results)
 
     return results
+
+
+@dataclass
+class ParsedAct:
+    title: str
+    effective_from: Optional[date]
+    effective_to: Optional[date]
+    provisions: list[Provision]
+
+
+def parse_act(xml_bytes: bytes, act_version_id: int) -> ParsedAct:
+    """Parse a raw act XML document in a single pass. Returns title, effective
+    dates, and provisions. Replaces three separate parse calls in the ingest path."""
+    root = _parse_xml(xml_bytes)
+
+    # title
+    title_el = root.find(".//pealkiri")
+    title = title_el.text.strip() if title_el is not None and title_el.text else ""
+
+    # effective dates
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    meta = root.find("metaandmed")
+    if meta is not None:
+        kehtivus = meta.find("kehtivus")
+        if kehtivus is not None:
+            def _d(tag: str) -> Optional[date]:
+                el = kehtivus.find(tag)
+                if el is None or not el.text:
+                    return None
+                try:
+                    return datetime.fromisoformat(el.text[:10]).date()
+                except ValueError:
+                    return None
+            effective_from = _d("kehtivuseAlgus")
+            effective_to = _d("kehtivuseLopp")
+
+    # provisions — reuse the existing tree walk logic
+    results: list[Provision] = []
+    sisu = root.find("sisu")
+    if sisu is None:
+        sisu = root
+
+    for part_el in sisu.findall(TAGS["part"]):
+        for chapter_el in part_el.findall(TAGS["chapter"]):
+            for section_el in chapter_el.findall(TAGS["section"]):
+                _parse_section(section_el, act_version_id, None, results)
+        for section_el in part_el.findall(TAGS["section"]):
+            _parse_section(section_el, act_version_id, None, results)
+
+    for chapter_el in sisu.findall(TAGS["chapter"]):
+        for section_el in chapter_el.findall(TAGS["section"]):
+            _parse_section(section_el, act_version_id, None, results)
+
+    for section_el in sisu.findall(TAGS["section"]):
+        _parse_section(section_el, act_version_id, None, results)
+
+    return ParsedAct(
+        title=title,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        provisions=results,
+    )
