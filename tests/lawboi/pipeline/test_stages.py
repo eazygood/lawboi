@@ -1,7 +1,7 @@
 from datetime import date
 from lawboi.pipeline.context import RetrievalContext
 from lawboi.pipeline.stages import (
-    CitationShortCircuit, DenseSearch, SparseSearch, Merge, Rerank, is_citation_query,
+    CitationShortCircuit, DenseSearch, SparseSearch, Rerank, is_citation_query,
 )
 from lawboi.domain.models import Act, ActVersion, Provision
 from tests.lawboi.fakes import InMemoryVectorStore, InMemoryStructuredStore
@@ -36,13 +36,6 @@ def test_sparse_search_uses_fts():
     ctx = RetrievalContext(query="tähtaeg", as_of=date(2021, 1, 1))
     SparseSearch(_store_with_provision())(ctx)
     assert any(c["section_num"] == "97" for c in ctx.candidates)
-
-
-def test_merge_is_dedup_passthrough():
-    ctx = RetrievalContext(query="q", as_of=date(2021, 1, 1))
-    ctx.add({"provision_id": 1, "section_num": "1", "text": "t", "metadata": {}})
-    Merge()(ctx)
-    assert len(ctx.candidates) == 1
 
 
 def test_rerank_noop_without_reranker():

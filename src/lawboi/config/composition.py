@@ -5,7 +5,7 @@ from lawboi.config.settings import Settings
 from lawboi.pipeline.retrieval import RetrievalService
 from lawboi.pipeline.stages import (
     CitationShortCircuit, DenseSearch, SparseSearch, ProceduralAugment,
-    StepBackExpand, Merge, Rerank,
+    StepBackExpand, Rerank,
 )
 from lawboi.answer.service import AnswerService
 from lawboi.ingest.service import IngestService
@@ -27,7 +27,6 @@ def build_pipeline(store, vector, embedder, llm, reranker):
         SparseSearch(store),
         ProceduralAugment(vector, embedder, store),
         StepBackExpand(vector, embedder, store, llm),
-        Merge(),
         Rerank(reranker),
     ]
 
