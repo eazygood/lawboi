@@ -6,6 +6,7 @@ from tests.lawboi.fakes import InMemoryStructuredStore, InMemoryVectorStore
 
 class StubEmbedder:
     def embed_passage(self, text): return [0.1]
+    def embed_passages(self, texts): return [[0.1]] * len(texts)
 
 
 def test_index_act_writes_store_and_vector():
@@ -62,3 +63,35 @@ def test_new_version_closes_prior_open_version():
     versions = {v.source_global_id: v for v in store.list_act_versions("13198023")}
     assert versions[100].effective_to == date(2024, 5, 31)
     assert versions[200].effective_to is None
+
+
+def test_index_act_uses_batch_embedding():
+    """IngestService must call embed_passages (batch) not embed_passage (single)."""
+    store, vector = InMemoryStructuredStore(), InMemoryVectorStore()
+
+    class BatchTrackingEmbedder:
+        def __init__(self):
+            self.single_calls = 0
+            self.batch_calls = 0
+
+        def embed_passage(self, text):
+            self.single_calls += 1
+            return [0.1]
+
+        def embed_passages(self, texts):
+            self.batch_calls += 1
+            return [[0.1]] * len(texts)
+
+    embedder = BatchTrackingEmbedder()
+    svc = IngestService(store, vector, embedder)
+    act = Act(None, "RT I 2009, 5, 35", "TLS", None, "general", "seadus")
+    version = ActVersion(None, 0, date(2020, 1, 1), None, "u", "h")
+    provisions = [
+        Provision(None, 0, str(i), "section", f"tekst {i}", None, None)
+        for i in range(5)
+    ]
+    chunks = [Chunk(None, 0, str(i), f"tekst {i}", {}) for i in range(5)]
+    svc.index_act(act, version, provisions, chunks)
+
+    assert embedder.single_calls == 0, "embed_passage (single) should not be called"
+    assert embedder.batch_calls == 1, "embed_passages should be called exactly once"

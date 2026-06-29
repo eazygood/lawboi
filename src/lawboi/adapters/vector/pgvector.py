@@ -48,4 +48,16 @@ class PostgresVectorStore:
             ]
 
     def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
-        raise NotImplementedError("implemented in Task 7")
+        if not pairs:
+            return
+        with pooled_cursor(self._pool) as cur:
+            from psycopg2.extras import execute_values
+            execute_values(
+                cur,
+                """
+                UPDATE provision SET embedding = data.emb::vector
+                FROM (VALUES %s) AS data(id, emb)
+                WHERE provision.id = data.id::int
+                """,
+                [(pid, _vec(emb)) for pid, emb in pairs],
+            )

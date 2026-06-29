@@ -5,7 +5,7 @@ from lawboi.ports.vector_store import VectorStore
 
 class IngestService:
     """Writes act metadata to the structured store and provision embeddings to
-    the vector store, keeping the two in sync (mirrors index_act in indexer.py)."""
+    the vector store, keeping the two in sync."""
 
     def __init__(self, store: StructuredStore, vector: VectorStore, embedder):
         self._store = store
@@ -19,10 +19,12 @@ class IngestService:
         version_id = self._store.upsert_act_version(version)
         if self._store.version_has_provisions(version_id):
             return
+
         for provision, chunk in zip(provisions, chunks):
             provision.act_version_id = version_id
             chunk.act_version_id = version_id
             provision.id = self._store.insert_provision(provision)
             chunk.provision_id = provision.id
-            embedding = self._embedder.embed_passage(chunk.text)
-            self._vector.upsert(provision.id, embedding)
+
+        embeddings = self._embedder.embed_passages([c.text for c in chunks])
+        self._vector.batch_upsert(list(zip([p.id for p in provisions], embeddings)))
