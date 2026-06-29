@@ -14,8 +14,9 @@ def test_llm_protocol_satisfied():
 
 def test_vector_protocol_satisfied():
     class Stub:
-        def query(self, embedding, n_results): return []
-        def upsert(self, provision_id, embedding, document, metadata): ...
+        def query(self, embedding, n_results, as_of): return []
+        def upsert(self, provision_id, embedding): ...
+        def batch_upsert(self, pairs): ...
     assert isinstance(Stub(), VectorStore)
 
 

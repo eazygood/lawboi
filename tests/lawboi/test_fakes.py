@@ -15,7 +15,7 @@ def test_fake_llm_returns_scripted():
 def test_inmemory_vector_roundtrip():
     v = InMemoryVectorStore()
     v.upsert(1, [0.1])
-    hits = v.query([0.1], n_results=5)
+    hits = v.query([0.1], n_results=5, as_of=date(2021, 1, 1))
     assert hits and isinstance(hits[0], VectorHit) and hits[0].provision_id == 1
 
 

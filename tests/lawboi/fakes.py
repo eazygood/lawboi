@@ -24,11 +24,15 @@ class InMemoryVectorStore:
     def upsert(self, provision_id: int, embedding: list[float]) -> None:
         self._embeddings[provision_id] = embedding
 
-    def query(self, embedding: list[float], n_results: int) -> list[VectorHit]:
+    def query(self, embedding: list[float], n_results: int, as_of: date) -> list[VectorHit]:
         return [
             VectorHit(provision_id=pid, section_num="", text="", metadata={})
             for pid in list(self._embeddings.keys())[:n_results]
         ]
+
+    def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
+        for pid, emb in pairs:
+            self._embeddings[pid] = emb
 
 
 class InMemoryStructuredStore:

@@ -1,3 +1,5 @@
+from datetime import date
+
 from lawboi.adapters.structured.pool import pooled_cursor
 from lawboi.adapters._util import build_provision_metadata
 from lawboi.domain.dto import VectorHit
@@ -18,7 +20,7 @@ class PostgresVectorStore:
                 (_vec(embedding), provision_id),
             )
 
-    def query(self, embedding: list[float], n_results: int) -> list[VectorHit]:
+    def query(self, embedding: list[float], n_results: int, as_of: date) -> list[VectorHit]:
         with pooled_cursor(self._pool) as cur:
             cur.execute(
                 """
@@ -28,10 +30,12 @@ class PostgresVectorStore:
                 JOIN act_version av ON p.act_version_id = av.id
                 JOIN act a ON av.act_id = a.id
                 WHERE p.embedding IS NOT NULL
+                  AND av.effective_from <= %s
+                  AND (av.effective_to IS NULL OR av.effective_to >= %s)
                 ORDER BY p.embedding <=> %s::vector
                 LIMIT %s
                 """,
-                (_vec(embedding), n_results),
+                (as_of, as_of, _vec(embedding), n_results),
             )
             return [
                 VectorHit(
@@ -42,3 +46,6 @@ class PostgresVectorStore:
                 )
                 for r in cur.fetchall()
             ]
+
+    def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
+        raise NotImplementedError("implemented in Task 7")

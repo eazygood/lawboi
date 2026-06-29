@@ -64,7 +64,7 @@ class DenseSearch:
         if ctx.done:
             return ctx
         emb = self._embedder.embed_query(ctx.query)
-        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=20)])
+        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=20, as_of=ctx.as_of)])
         return ctx
 
 
@@ -91,7 +91,7 @@ class ProceduralAugment:
             return ctx
         q = f"{ctx.query} {ctx.config.procedural_terms}"
         emb = self._embedder.embed_query(q)
-        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=10)])
+        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=10, as_of=ctx.as_of)])
         ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(q, ctx.as_of)])
         return ctx
 
@@ -132,7 +132,7 @@ class StepBackExpand:
             return ctx
         log.info("Step-back query: %s -> %s", ctx.query, step_back)
         emb = self._embedder.embed_query(step_back)
-        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=10)])
+        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=10, as_of=ctx.as_of)])
         ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(step_back, ctx.as_of)])
         return ctx
 

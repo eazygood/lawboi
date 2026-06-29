@@ -17,7 +17,7 @@ def test_index_act_writes_store_and_vector():
     chunks = [Chunk(None, 0, "1", "reguleerimisala", {"eli": "RT I 2009, 5, 35"})]
     svc.index_act(act, version, provisions, chunks)
     assert store.fts_search("reguleerimisala", date(2021, 1, 1))
-    assert vector.query([0.1], 5)
+    assert vector.query([0.1], 5, date(2021, 1, 1))
 
 
 def test_index_act_skips_when_version_already_populated():
