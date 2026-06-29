@@ -31,14 +31,9 @@ def _extract_title_query(query: str) -> str:
     return cleaned.strip()
 
 
-def _hit_to_dict(hit) -> dict:
-    return {"provision_id": hit.provision_id, "section_num": hit.section_num,
-            "text": hit.text, "metadata": hit.metadata}
-
-
-def _rp_to_dict(rp) -> dict:
-    return {"provision_id": rp.provision_id, "section_num": rp.section_num,
-            "text": rp.text, "metadata": rp.metadata}
+def _to_provision_dict(p) -> dict:
+    return {"provision_id": p.provision_id, "section_num": p.section_num,
+            "text": p.text, "metadata": p.metadata}
 
 
 class CitationShortCircuit:
@@ -55,7 +50,7 @@ class CitationShortCircuit:
         rows = self._store.exact_lookup(
             section_num=m.group(1), as_of=ctx.as_of, limit=ctx.config.limit,
             eli=_extract_eli(ctx.query), title_query=_extract_title_query(ctx.query) or None)
-        ctx.add_all([_rp_to_dict(r) for r in rows])
+        ctx.add_all([_to_provision_dict(r) for r in rows])
         ctx.done = True
         return ctx
 
@@ -69,7 +64,7 @@ class DenseSearch:
         if ctx.done:
             return ctx
         emb = self._embedder.embed_query(ctx.query)
-        ctx.add_all([_hit_to_dict(h) for h in self._vector.query(emb, n_results=20)])
+        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=20)])
         return ctx
 
 
@@ -80,7 +75,7 @@ class SparseSearch:
     def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
         if ctx.done:
             return ctx
-        ctx.add_all([_rp_to_dict(r) for r in self._store.fts_search(ctx.query, ctx.as_of)])
+        ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(ctx.query, ctx.as_of)])
         return ctx
 
 
@@ -96,8 +91,8 @@ class ProceduralAugment:
             return ctx
         q = f"{ctx.query} {ctx.config.procedural_terms}"
         emb = self._embedder.embed_query(q)
-        ctx.add_all([_hit_to_dict(h) for h in self._vector.query(emb, n_results=10)])
-        ctx.add_all([_rp_to_dict(r) for r in self._store.fts_search(q, ctx.as_of)])
+        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=10)])
+        ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(q, ctx.as_of)])
         return ctx
 
 
@@ -137,8 +132,8 @@ class StepBackExpand:
             return ctx
         log.info("Step-back query: %s -> %s", ctx.query, step_back)
         emb = self._embedder.embed_query(step_back)
-        ctx.add_all([_hit_to_dict(h) for h in self._vector.query(emb, n_results=10)])
-        ctx.add_all([_rp_to_dict(r) for r in self._store.fts_search(step_back, ctx.as_of)])
+        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=10)])
+        ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(step_back, ctx.as_of)])
         return ctx
 
 

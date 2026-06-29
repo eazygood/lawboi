@@ -1,4 +1,5 @@
 from lawboi.adapters.structured.pool import pooled_cursor
+from lawboi.adapters._util import build_provision_metadata
 from lawboi.domain.dto import VectorHit
 
 
@@ -37,14 +38,7 @@ class PostgresVectorStore:
                     provision_id=r[0],
                     section_num=r[1],
                     text=r[2],
-                    metadata={
-                        "act_title": r[3],
-                        "eli": r[4],
-                        "section_num": r[1],
-                        "act_version_id": r[5],
-                        "is_translation": False,
-                        "context": "",
-                    },
+                    metadata=build_provision_metadata(r[3], r[4], r[1], r[5]),
                 )
                 for r in cur.fetchall()
             ]

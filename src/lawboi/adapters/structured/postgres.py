@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from lawboi.adapters.structured.pool import pooled_cursor
+from lawboi.adapters._util import build_provision_metadata
 from lawboi.domain.models import Act, ActVersion, Provision
 from lawboi.domain.dto import RetrievedProvision
 
@@ -172,14 +173,7 @@ class PostgresStore:
                     provision_id=r[0],
                     section_num=r[1],
                     text=r[2],
-                    metadata={
-                        "act_title": r[4],
-                        "eli": r[5],
-                        "section_num": r[1],
-                        "act_version_id": r[3],
-                        "is_translation": False,
-                        "context": "",
-                    },
+                    metadata=build_provision_metadata(r[4], r[5], r[1], r[3]),
                 )
                 for r in cur.fetchall()
             ]
@@ -223,14 +217,7 @@ class PostgresStore:
                         provision_id=r[0],
                         section_num=r[1],
                         text=r[2],
-                        metadata={
-                            "act_title": r[4],
-                            "eli": r[5],
-                            "section_num": r[1],
-                            "act_version_id": r[3],
-                            "is_translation": False,
-                            "context": "",
-                        },
+                        metadata=build_provision_metadata(r[4], r[5], r[1], r[3]),
                     )
                     for r in rows
                 ]
@@ -241,14 +228,7 @@ class PostgresStore:
                     provision_id=r[0],
                     section_num=r[1],
                     text=r[2],
-                    metadata={
-                        "act_title": r[4],
-                        "eli": r[5],
-                        "section_num": r[1],
-                        "act_version_id": r[3],
-                        "is_translation": False,
-                        "context": "",
-                    },
+                    metadata=build_provision_metadata(r[4], r[5], r[1], r[3]),
                 )
                 for r in cur.fetchall()
             ]
