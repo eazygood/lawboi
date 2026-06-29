@@ -4,11 +4,11 @@ from datetime import date
 from dotenv import load_dotenv
 load_dotenv()
 
-from lawboi.config.settings import Settings
+from lawboi.config.settings import load_settings
 from lawboi.config.composition import build_container
 from lawboi.adapters.source.riigiteataja import RiigiTeatajaSource
 from lawboi.adapters.source.parser import (
-    parse_act_xml, parse_act_title, _parse_effective_date,
+    parse_act_xml, parse_act_title, parse_effective_date,
 )
 from lawboi.ingest.chunker import chunk_provisions
 from lawboi.domain.models import Act, ActVersion
@@ -48,7 +48,7 @@ def _is_better(candidate: ActMeta, incumbent: ActMeta, on: date) -> bool:
 
 
 def run_ingest(query: str) -> None:
-    container = build_container(Settings())
+    container = build_container(load_settings())
     source = RiigiTeatajaSource()
 
     if query.isdigit():
@@ -72,7 +72,7 @@ def run_ingest(query: str) -> None:
         print(f"  Fetching globaalID={gid} ({titles[gid]})...")
         raw = source.fetch(gid)
         source_hash = compute_hash(raw.xml)
-        eff_from_xml, eff_to_xml = _parse_effective_date(raw.xml)
+        eff_from_xml, eff_to_xml = parse_effective_date(raw.xml)
         title_xml = parse_act_title(raw.xml) or titles[gid]
         eff_from = eff_from_xml or froms.get(gid) or date.today()
         eff_to = eff_to_xml or tos.get(gid)
@@ -97,7 +97,7 @@ def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
     redaktsioonid whose globaalID is already ingested are skipped before the
     XML fetch, so re-runs only download new or amended acts. Pass force=True to
     re-fetch every act (e.g. after a parser or embedding change)."""
-    container = build_container(Settings())
+    container = build_container(load_settings())
     source = RiigiTeatajaSource()
     today = date.today()
 
@@ -119,7 +119,7 @@ def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
             print(f"  [{i}/{total}] {m.title}: fetch failed — {e}")
             continue
         source_hash = compute_hash(raw.xml)
-        eff_from_xml, eff_to_xml = _parse_effective_date(raw.xml)
+        eff_from_xml, eff_to_xml = parse_effective_date(raw.xml)
         title = parse_act_title(raw.xml) or m.title
         eff_from = eff_from_xml or m.effective_from or today
         eff_to = eff_to_xml or m.effective_to

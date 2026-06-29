@@ -17,6 +17,7 @@ class RetrievalContext:
     as_of: date
     candidates: list[dict] = field(default_factory=list)
     config: RetrievalConfig = field(default_factory=RetrievalConfig)
+    done: bool = False
     _seen: set[int] = field(default_factory=set)
 
     def add(self, provision: dict) -> None:

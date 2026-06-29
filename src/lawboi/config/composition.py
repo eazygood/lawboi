@@ -9,6 +9,7 @@ from lawboi.pipeline.stages import (
 )
 from lawboi.answer.service import AnswerService
 from lawboi.ingest.service import IngestService
+from lawboi.ports.structured_store import StructuredStore
 
 
 @dataclass
@@ -16,7 +17,7 @@ class Container:
     retrieval: RetrievalService
     answer: AnswerService
     ingest: IngestService
-    store: object = None   # StructuredStore, exposed for the read-only acts route
+    store: Optional[StructuredStore] = None
 
 
 def build_pipeline(store, vector, embedder, llm, reranker):

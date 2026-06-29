@@ -56,4 +56,4 @@ def test_citation_shortcircuit_sets_flag():
     ctx = RetrievalContext(query="§ 97 töölepingu seadus", as_of=date(2021, 1, 1))
     out = CitationShortCircuit(_store_with_provision())(ctx)
     assert out.candidates and out.candidates[0]["section_num"] == "97"
-    assert getattr(out, "_done", False) is True
+    assert out.done is True

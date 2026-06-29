@@ -15,9 +15,9 @@ def make_pool(database_url: Optional[str] = None, minconn: int = 1,
 def pooled_cursor(pool: ThreadedConnectionPool):
     conn = pool.getconn()
     try:
-        cur = conn.cursor()
-        yield cur
-        conn.commit()
+        with conn.cursor() as cur:
+            yield cur
+            conn.commit()
     except Exception:
         conn.rollback()
         raise

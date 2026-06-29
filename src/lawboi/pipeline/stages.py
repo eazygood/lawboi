@@ -56,7 +56,7 @@ class CitationShortCircuit:
             section_num=m.group(1), as_of=ctx.as_of, limit=ctx.config.limit,
             eli=_extract_eli(ctx.query), title_query=_extract_title_query(ctx.query) or None)
         ctx.add_all([_rp_to_dict(r) for r in rows])
-        ctx._done = True
+        ctx.done = True
         return ctx
 
 
@@ -66,7 +66,7 @@ class DenseSearch:
         self._embedder = embedder
 
     def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
-        if getattr(ctx, "_done", False):
+        if ctx.done:
             return ctx
         emb = self._embedder.embed_query(ctx.query)
         ctx.add_all([_hit_to_dict(h) for h in self._vector.query(emb, n_results=20)])
@@ -78,7 +78,7 @@ class SparseSearch:
         self._store = store
 
     def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
-        if getattr(ctx, "_done", False):
+        if ctx.done:
             return ctx
         ctx.add_all([_rp_to_dict(r) for r in self._store.fts_search(ctx.query, ctx.as_of)])
         return ctx
@@ -92,7 +92,7 @@ class ProceduralAugment:
         self._store = store
 
     def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
-        if getattr(ctx, "_done", False):
+        if ctx.done:
             return ctx
         q = f"{ctx.query} {ctx.config.procedural_terms}"
         emb = self._embedder.embed_query(q)
@@ -126,7 +126,7 @@ class StepBackExpand:
         self._llm = llm
 
     def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
-        if getattr(ctx, "_done", False) or not ctx.config.step_back_enabled or self._llm is None:
+        if ctx.done or not ctx.config.step_back_enabled or self._llm is None:
             return ctx
         try:
             step_back = self._llm.complete(_STEP_BACK_PROMPT.format(query=ctx.query)).strip()

@@ -73,7 +73,7 @@ def _parse_section(
         ))
 
 
-def _parse_effective_date(xml_bytes: bytes) -> tuple[Optional[date], Optional[date]]:
+def parse_effective_date(xml_bytes: bytes) -> tuple[Optional[date], Optional[date]]:
     root = _parse_xml(xml_bytes)
     meta = root.find("metaandmed")
     if meta is None:
