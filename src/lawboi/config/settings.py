@@ -13,3 +13,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     answer_rate_limit: str = "10/minute"
     search_rate_limit: str = "30/minute"
+    trusted_proxies: list[str] = []   # e.g. ["10.0.0.0/8"] for internal load balancer
+
+
+def load_settings() -> Settings:
+    return Settings()  # type: ignore[call-arg]
