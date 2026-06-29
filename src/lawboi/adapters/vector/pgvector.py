@@ -1,5 +1,7 @@
 from datetime import date
 
+from psycopg2.extras import execute_values
+
 from lawboi.adapters.structured.pool import pooled_cursor
 from lawboi.adapters._util import build_provision_metadata
 from lawboi.domain.dto import VectorHit
@@ -51,7 +53,6 @@ class PostgresVectorStore:
         if not pairs:
             return
         with pooled_cursor(self._pool) as cur:
-            from psycopg2.extras import execute_values
             execute_values(
                 cur,
                 """

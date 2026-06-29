@@ -1,11 +1,14 @@
 from datetime import date
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from lawboi.api.main import app
 from lawboi.api.deps import get_retrieval, get_answer, get_store
 from lawboi.domain.models import Act, ActVersion, Provision
 from lawboi.pipeline.retrieval import RetrievalService
 from lawboi.answer.service import AnswerService
+from lawboi.config.settings import Settings
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from tests.lawboi.fakes import FakeLLMProvider, InMemoryStructuredStore
 
 
@@ -95,3 +98,21 @@ def test_get_act_as_of_excludes_not_yet_effective():
     r = _store_client().get(f"/acts/{ELI}/as-of", params={"date": "2008-01-01"})
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_proxy_headers_middleware_registered_when_trusted_proxies_set():
+    settings = Settings(trusted_proxies=["127.0.0.1"], database_url="postgresql://x")
+    test_app = FastAPI()
+    if settings.trusted_proxies:
+        test_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies)
+    middleware_classes = [m.cls for m in test_app.user_middleware]
+    assert ProxyHeadersMiddleware in middleware_classes
+
+
+def test_proxy_headers_middleware_not_registered_when_trusted_proxies_empty():
+    settings = Settings(trusted_proxies=[], database_url="postgresql://x")
+    test_app = FastAPI()
+    if settings.trusted_proxies:
+        test_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies)
+    middleware_classes = [m.cls for m in test_app.user_middleware]
+    assert ProxyHeadersMiddleware not in middleware_classes
