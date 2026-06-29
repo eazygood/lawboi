@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 class AnswerRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
-    model: Optional[str] = None
     as_of_date: Optional[date] = None
 
 
