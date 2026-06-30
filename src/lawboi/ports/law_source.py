@@ -1,4 +1,5 @@
 from typing import Iterable, Iterator, Protocol, runtime_checkable
+
 from lawboi.domain.dto import ActMeta, RawAct
 
 

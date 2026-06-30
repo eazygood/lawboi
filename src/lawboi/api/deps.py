@@ -1,12 +1,12 @@
 from functools import lru_cache
 
-from lawboi.config.settings import Settings
+from lawboi.config.settings import load_settings
 from lawboi.config.composition import build_container, Container
 
 
 @lru_cache
 def get_container() -> Container:
-    return build_container(Settings())
+    return build_container(load_settings())
 
 
 def get_retrieval():
