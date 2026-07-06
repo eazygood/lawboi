@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Start infrastructure (required for tests and local dev)
-docker-compose up -d db chroma
+docker-compose up -d db
 
 # Run all tests (62 tests, no live LLM or RT API calls)
 .venv/bin/python -m pytest
@@ -45,16 +45,16 @@ src/lawboi/
   adapters/
     llm/          gemini.py  openai.py  anthropic.py  registry.py  factory.py
     structured/   pool.py  postgres.py
-    vector/       chroma.py
+    vector/       pgvector.py
     source/       parser.py  riigiteataja.py  riigiteataja_client.py
   pipeline/       context.py  stages.py  retrieval.py
   ingest/         embedder.py  chunker.py  service.py  __main__.py
   answer/         prompts.py  citations.py  service.py
   config/         settings.py  composition.py
-  api/            main.py  schemas.py  errors.py  deps.py  routes/
+  api/            main.py  schemas.py  errors.py  deps.py  limiter.py  routes/
 ```
 
-**Offline ingest pipeline** (`src/lawboi/ingest/`): entry point `python -m lawboi.ingest`. Writes to both PostgreSQL and ChromaDB via `IngestService`.
+**Offline ingest pipeline** (`src/lawboi/ingest/`): entry point `python -m lawboi.ingest`. Writes to PostgreSQL (structured store + pgvector) via `IngestService`.
 
 **Online API** (`src/lawboi/api/`): FastAPI app. `RetrievalService` (pipeline of stages) reads from both stores; `AnswerService` calls the LLM. Services only read — they never write. Wired via `build_container(Settings())` in `src/lawboi/config/composition.py`.
 
@@ -62,16 +62,16 @@ src/lawboi/
 
 ## Data Model
 
-Two storage layers, always kept in sync:
+Single PostgreSQL database (using the `pgvector/pgvector:pg16` image), two logical layers:
 
-- **PostgreSQL**: `act` → `act_version` → `provision` hierarchy. `act_version` tracks historical versions via `effective_from`/`effective_to` dates. FTS index on `provision.text_et` using the `simple` dictionary (language-agnostic tokenisation, correct for Estonian).
-- **ChromaDB**: one collection `"provisions"`, keyed as `provision_{id}`, holding `multilingual-e5-large` embeddings (1024-dim).
+- **Structured store** (`adapters/structured/postgres.py`): `act` → `act_version` → `provision` hierarchy. `act_version` tracks historical versions via `effective_from`/`effective_to` dates. FTS index on `provision.text_et` using the `simple` dictionary (language-agnostic tokenisation, correct for Estonian).
+- **Vector store** (`adapters/vector/pgvector.py`): `PostgresVectorStore` stores 1024-dim `multilingual-e5-large` embeddings as pgvector columns on the `provision` table. Both stores share the same connection pool.
 
 ## Key Invariants
 
 **No answer without sources.** `POST /answer` returns 422 if retrieval returns an empty list. `AnswerService.answer()` raises `NoSourcesFoundError` → mapped to 422 by `src/lawboi/api/errors.py`. Don't break this gate.
 
-**Retrieval makes two ChromaDB queries per request.** `DenseSearch` embeds the original query; `ProceduralAugment` embeds `query + _PROCEDURAL_TERMS` to surface remedies and deadlines. Tests must not assert `query.assert_called_once()`.
+**Retrieval pipeline runs 6 stages in order.** `build_pipeline` in `composition.py` wires: `CitationShortCircuit` (exact §-lookup, sets `ctx.done = True` to skip remaining stages) → `DenseSearch` (vector query on original query) → `SparseSearch` (FTS on original query) → `ProceduralAugment` (vector + FTS on `query + _PROCEDURAL_TERMS`) → `StepBackExpand` (LLM-abstracted query, skipped if no LLM) → `Rerank`. Tests must not assert that any embedder or store method is called exactly once.
 
 **Reranker is a no-op stage when `COHERE_API_KEY` is unset.** `Rerank` stage in `src/lawboi/pipeline/stages.py` skips reranking when `self._reranker is None`. Built in `src/lawboi/config/composition.py:_build_reranker`.
 
