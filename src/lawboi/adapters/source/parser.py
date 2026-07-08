@@ -20,10 +20,12 @@ TAGS = {
 
 
 def _parse_xml(xml_bytes: bytes) -> ET.Element:
-    it = ET.iterparse(io.BytesIO(xml_bytes))
-    for _, el in it:
+    root = None
+    for _, el in ET.iterparse(io.BytesIO(xml_bytes)):
         _, _, el.tag = el.tag.rpartition("}")
-    return it.root
+        root = el
+    assert root is not None  # the root element's own end-event fires last
+    return root
 
 
 def _extract_text(element: ET.Element) -> str:

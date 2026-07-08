@@ -1,7 +1,5 @@
 from datetime import date
 
-from psycopg2.extras import execute_values
-
 from lawboi.adapters.structured.pool import pooled_cursor
 from lawboi.adapters._util import build_provision_metadata
 from lawboi.domain.dto import VectorHit
@@ -15,16 +13,16 @@ class PostgresVectorStore:
     def __init__(self, pool):
         self._pool = pool
 
-    def upsert(self, provision_id: int, embedding: list[float]) -> None:
-        with pooled_cursor(self._pool) as cur:
-            cur.execute(
+    async def upsert(self, provision_id: int, embedding: list[float]) -> None:
+        async with pooled_cursor(self._pool) as cur:
+            await cur.execute(
                 "UPDATE provision SET embedding = %s::vector WHERE id = %s",
                 (_vec(embedding), provision_id),
             )
 
-    def query(self, embedding: list[float], n_results: int, as_of: date) -> list[VectorHit]:
-        with pooled_cursor(self._pool) as cur:
-            cur.execute(
+    async def query(self, embedding: list[float], n_results: int, as_of: date) -> list[VectorHit]:
+        async with pooled_cursor(self._pool) as cur:
+            await cur.execute(
                 """
                 SELECT p.id, p.section_num, p.text_et, a.title_et, a.eli,
                        p.act_version_id
@@ -39,6 +37,7 @@ class PostgresVectorStore:
                 """,
                 (as_of, as_of, _vec(embedding), n_results),
             )
+            rows = await cur.fetchall()
             return [
                 VectorHit(
                     provision_id=r[0],
@@ -46,19 +45,14 @@ class PostgresVectorStore:
                     text=r[2],
                     metadata=build_provision_metadata(r[3], r[4], r[1], r[5]),
                 )
-                for r in cur.fetchall()
+                for r in rows
             ]
 
-    def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
+    async def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
         if not pairs:
             return
-        with pooled_cursor(self._pool) as cur:
-            execute_values(
-                cur,
-                """
-                UPDATE provision SET embedding = data.emb::vector
-                FROM (VALUES %s) AS data(id, emb)
-                WHERE provision.id = data.id::int
-                """,
-                [(pid, _vec(emb)) for pid, emb in pairs],
+        async with pooled_cursor(self._pool) as cur:
+            await cur.executemany(
+                "UPDATE provision SET embedding = %s::vector WHERE id = %s",
+                [(_vec(emb), pid) for pid, emb in pairs],
             )

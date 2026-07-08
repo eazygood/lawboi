@@ -22,6 +22,7 @@ export default function ChatInterface({ availableModels }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState(availableModels[0] ?? "gemini-2.0-flash")
   const [panelResponse, setPanelResponse] = useState<AnswerResponse | null>(null)
+  const [conversationId, setConversationId] = useState<number | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -32,7 +33,12 @@ export default function ChatInterface({ availableModels }: Props) {
     setMessages((prev) => [...prev, { role: "user", content: query }])
     setLoading(true)
     try {
-      const response = await fetchAnswer({ query, model: selectedModel })
+      const response = await fetchAnswer({
+        query,
+        model: selectedModel,
+        conversation_id: conversationId ?? undefined,
+      })
+      setConversationId(response.conversation_id)
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: response.answer, response },

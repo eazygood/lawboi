@@ -1,10 +1,13 @@
+from typing import cast
+
 from sentence_transformers import SentenceTransformer
 
 MODEL_NAME = "intfloat/multilingual-e5-large"
 
 
-def _to_list(arr):
-    return arr.tolist() if hasattr(arr, "tolist") else arr
+def _to_list(arr) -> list:
+    result = arr.tolist() if hasattr(arr, "tolist") else arr
+    return cast(list, result)
 
 
 class Embedder:

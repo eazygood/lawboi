@@ -12,8 +12,8 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def pool():
-    return make_pool(minconn=1, maxconn=2)
+async def pool():
+    return await make_pool(min_size=1, max_size=2)
 
 
 @pytest.fixture
@@ -26,15 +26,15 @@ def vector(pool):
     return PostgresVectorStore(pool)
 
 
-def test_upsert_then_query(store, vector):
-    aid = store.upsert_act(Act(None, "RT I VEC 1", "Vektorseadus", None, "general", "seadus"))
-    vid = store.upsert_act_version(ActVersion(None, aid, date(2000, 1, 1), None, "u", "h"))
-    pid = store.insert_provision(Provision(None, vid, "77", "section", "vektorikatse tekst", None, None))
+async def test_upsert_then_query(store, vector):
+    aid = await store.upsert_act(Act(None, "RT I VEC 1", "Vektorseadus", None, "general", "seadus"))
+    vid = await store.upsert_act_version(ActVersion(None, aid, date(2000, 1, 1), None, "u", "h"))
+    pid = await store.insert_provision(Provision(None, vid, "77", "section", "vektorikatse tekst", None, None))
 
     embedding = [0.01] * 1024
-    vector.upsert(pid, embedding)
+    await vector.upsert(pid, embedding)
 
-    hits = vector.query(embedding, n_results=5, as_of=date(2020, 1, 1))  # added as_of
+    hits = await vector.query(embedding, n_results=5, as_of=date(2020, 1, 1))  # added as_of
     assert hits and isinstance(hits[0], VectorHit)
     assert any(h.provision_id == pid for h in hits)
     match = next(h for h in hits if h.provision_id == pid)
@@ -43,16 +43,16 @@ def test_upsert_then_query(store, vector):
     assert match.metadata["eli"] == "RT I VEC 1"
 
 
-def test_query_excludes_expired_versions(store, vector):
+async def test_query_excludes_expired_versions(store, vector):
     """A provision from an expired act version must not appear in results."""
-    aid = store.upsert_act(Act(None, "RT I VEC 2", "Vananenud seadus", None, "general", "seadus"))
-    vid = store.upsert_act_version(
+    aid = await store.upsert_act(Act(None, "RT I VEC 2", "Vananenud seadus", None, "general", "seadus"))
+    vid = await store.upsert_act_version(
         ActVersion(None, aid, date(2000, 1, 1), date(2010, 12, 31), "u", "h")
     )
-    pid = store.insert_provision(Provision(None, vid, "1", "section", "vana tekst", None, None))
+    pid = await store.insert_provision(Provision(None, vid, "1", "section", "vana tekst", None, None))
     embedding = [0.01] * 1024
-    vector.upsert(pid, embedding)
+    await vector.upsert(pid, embedding)
 
     # Query as of 2020 — this provision's version expired in 2010
-    hits = vector.query(embedding, n_results=5, as_of=date(2020, 1, 1))
+    hits = await vector.query(embedding, n_results=5, as_of=date(2020, 1, 1))
     assert all(h.provision_id != pid for h in hits), "expired provision should be excluded"

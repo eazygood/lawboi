@@ -9,6 +9,7 @@ class RetrievalConfig:
     limit: int = 5
     procedural_terms: str = _PROCEDURAL_TERMS
     step_back_enabled: bool = True
+    step_back_timeout_s: float = 2.0
 
 
 @dataclass

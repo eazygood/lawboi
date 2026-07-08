@@ -1,10 +1,22 @@
+from typing import Optional
+
+
+def format_history(history: Optional[list[dict]]) -> str:
+    if not history:
+        return ""
+    lines = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in history)
+    return f"CONVERSATION HISTORY:\n{lines}\n\n"
+
+
 SYSTEM_PROMPT = """\
 You are Eesti Õigusabi, a legal information assistant for Estonian law.
 You answer questions strictly based on the legal provisions provided below.
 
 RULES:
 1. Only use information from the provided provisions. Do not use prior knowledge.
-2. Every factual claim must cite its source as: [Act Name § Section lg Subsection].
+2. In the answer text, mark every factual claim's source inline as: [Act Name § Section lg
+   Subsection]. Separately, list every provision you relied on in the citations field —
+   one entry per section actually used, with its act title and section number.
 3. If the provided provisions do not contain enough information to answer, say so explicitly.
 4. Never speculate, infer beyond what is written, or fill gaps with assumptions.
 5. If the user's question requires specific legal advice for their situation, state
@@ -26,7 +38,7 @@ section entirely — do not speculate or invent steps.
 RETRIEVED PROVISIONS:
 {context}
 
-USER QUESTION:
+{history}USER QUESTION:
 {query}"""
 
 DISCLAIMER = (

@@ -8,14 +8,14 @@ def test_defaults(monkeypatch):
     for var in ("LLM_MODEL", "COHERE_API_KEY", "DB_POOL_MIN", "DB_POOL_MAX"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://x")
-    s = Settings(_env_file=None)
-    assert s.db_pool_min == 1
-    assert s.db_pool_max == 10
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.db_pool_min == 5
+    assert s.db_pool_max == 50
     assert s.llm_model is None
 
 
 def test_env_override(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://x")
     monkeypatch.setenv("LLM_MODEL", "gpt-4o")
-    s = Settings()
+    s = Settings()  # type: ignore[call-arg]
     assert s.llm_model == "gpt-4o"

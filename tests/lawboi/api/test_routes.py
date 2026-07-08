@@ -1,28 +1,53 @@
+import asyncio
 from datetime import date
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from lawboi.api.main import app
-from lawboi.api.deps import get_retrieval, get_answer, get_store
+from lawboi.api.deps import get_retrieval, get_answer, get_store, get_moderation
 from lawboi.domain.models import Act, ActVersion, Provision
 from lawboi.pipeline.retrieval import RetrievalService
 from lawboi.answer.service import AnswerService
+from lawboi.answer.moderation import ModerationService, ModerationResult
 from lawboi.config.settings import Settings
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+from lawboi.answer.citations import AnswerPayload, CitationOut
 from tests.lawboi.fakes import FakeLLMProvider, InMemoryStructuredStore
 
 
 class StubRetrieval(RetrievalService):
     def __init__(self, provisions):
         self._provisions = provisions
-    def retrieve(self, query, as_of=None, limit=None):
+    async def retrieve(self, query, as_of=None, limit=None):
         return self._provisions
 
 
-def _client(provisions):
+class ToggleModeration:
+    """Returns each queued result in order -- lets a test give different
+    verdicts to the input check vs. the output check."""
+    def __init__(self, results):
+        self._results = list(results)
+
+    async def check(self, text):
+        return self._results.pop(0)
+
+
+def _clean_moderation():
+    return ModerationService(
+        FakeLLMProvider(structured_response=ModerationResult(flagged=False, reason="")))
+
+
+def _client(provisions, store=None, moderation=None):
     app.dependency_overrides[get_retrieval] = lambda: StubRetrieval(provisions)
+    payload = AnswerPayload(
+        answer="Under § 97 notice applies.",
+        citations=[CitationOut(section="97", act_title="TLS")])
     app.dependency_overrides[get_answer] = lambda: AnswerService(
-        FakeLLMProvider(responses=["Under § 97 notice applies."]))
+        FakeLLMProvider(structured_response=payload))
+    store = store if store is not None else InMemoryStructuredStore()
+    app.dependency_overrides[get_store] = lambda: store
+    moderation = moderation if moderation is not None else _clean_moderation()
+    app.dependency_overrides[get_moderation] = lambda: moderation
     return TestClient(app)
 
 
@@ -40,11 +65,48 @@ def test_answer_returns_200_with_sources():
     r = _client([_prov()]).post("/answer", json={"query": "notice period?"})
     assert r.status_code == 200
     assert r.json()["citations"][0]["section"] == "§ 97"
+    assert isinstance(r.json()["conversation_id"], int)
 
 
 def test_answer_returns_422_without_sources():
     r = _client([]).post("/answer", json={"query": "who wins my lawsuit?"})
     assert r.status_code == 422
+
+
+def test_answer_reuses_supplied_conversation_id_and_persists_history():
+    store = InMemoryStructuredStore()
+    client = _client([_prov()], store=store)
+    first = client.post("/answer", json={"query": "notice period?"})
+    cid = first.json()["conversation_id"]
+    second = client.post(
+        "/answer", json={"query": "what about the deadline?", "conversation_id": cid})
+    assert second.status_code == 200
+    assert second.json()["conversation_id"] == cid
+    history = asyncio.run(store.recent_messages(cid, limit=10))
+    assert [m["content"] for m in history] == [
+        "notice period?", "Under § 97 notice applies.",
+        "what about the deadline?", "Under § 97 notice applies.",
+    ]
+
+
+def test_answer_blocked_by_input_moderation():
+    moderation = ToggleModeration([ModerationResult(flagged=True, reason="unsafe request")])
+    r = _client([_prov()], moderation=moderation).post(
+        "/answer", json={"query": "how do I launder money?"})
+    assert r.status_code == 400
+
+
+def test_answer_output_moderation_replaces_answer():
+    moderation = ToggleModeration([
+        ModerationResult(flagged=False, reason=""),
+        ModerationResult(flagged=True, reason="unsafe answer"),
+    ])
+    r = _client([_prov()], moderation=moderation).post(
+        "/answer", json={"query": "notice period?"})
+    assert r.status_code == 200
+    assert r.json()["answer"] == (
+        "I can't provide that response. Please rephrase your question about Estonian law."
+    )
 
 
 def test_search_returns_provision_results():
@@ -61,11 +123,12 @@ ELI = "test-act-2009"
 
 
 def _store_client():
+    import asyncio
     store = InMemoryStructuredStore()
-    aid = store.upsert_act(Act(None, ELI, "Testseadus", "Test Act", "employment", "seadus"))
-    vid = store.upsert_act_version(
-        ActVersion(None, aid, date(2009, 1, 1), None, "http://rt/x", "hash"))
-    store.insert_provision(Provision(None, vid, "97", "section", "tekst", None, None))
+    aid = asyncio.run(store.upsert_act(Act(None, ELI, "Testseadus", "Test Act", "employment", "seadus")))
+    vid = asyncio.run(store.upsert_act_version(
+        ActVersion(None, aid, date(2009, 1, 1), None, "http://rt/x", "hash")))
+    asyncio.run(store.insert_provision(Provision(None, vid, "97", "section", "tekst", None, None)))
     app.dependency_overrides[get_store] = lambda: store
     return TestClient(app)
 

@@ -37,7 +37,7 @@ class Provision:
 
 @dataclass
 class Chunk:
-    provision_id: int
+    provision_id: Optional[int]
     act_version_id: int
     section_num: str
     text: str

@@ -6,11 +6,13 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("DATABASE_URL"), reason="requires live Postgres")
 
 
-def test_pooled_cursor_executes_and_returns_connection():
-    pool = make_pool(minconn=1, maxconn=2)
-    with pooled_cursor(pool) as cur:
-        cur.execute("SELECT 1")
-        assert cur.fetchone()[0] == 1
-    with pooled_cursor(pool) as cur:
-        cur.execute("SELECT 2")
-        assert cur.fetchone()[0] == 2
+async def test_pooled_cursor_executes_and_returns_connection():
+    pool = await make_pool(min_size=1, max_size=2)
+    async with pooled_cursor(pool) as cur:
+        await cur.execute("SELECT 1")
+        row = await cur.fetchone()
+        assert row is not None and row[0] == 1
+    async with pooled_cursor(pool) as cur:
+        await cur.execute("SELECT 2")
+        row = await cur.fetchone()
+        assert row is not None and row[0] == 2

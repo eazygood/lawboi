@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import date
@@ -16,7 +17,7 @@ _AUGMENT_N = 10    # candidates fetched by ProceduralAugment and StepBackExpand
 
 @runtime_checkable
 class RetrievalStage(Protocol):
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext: ...
+    async def __call__(self, ctx: RetrievalContext) -> RetrievalContext: ...
 
 
 def is_citation_query(query: str) -> bool:
@@ -44,13 +45,13 @@ class CitationShortCircuit:
     def __init__(self, store: StructuredStore):
         self._store = store
 
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+    async def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
         if not is_citation_query(ctx.query):
             return ctx
         m = re.search(r"§\s*(\d+[a-z]?)", ctx.query)
         if not m:
             return ctx
-        rows = self._store.exact_lookup(
+        rows = await self._store.exact_lookup(
             section_num=m.group(1), as_of=ctx.as_of, limit=ctx.config.limit,
             eli=_extract_eli(ctx.query), title_query=_extract_title_query(ctx.query) or None)
         ctx.add_all([_to_provision_dict(r) for r in rows])
@@ -59,27 +60,29 @@ class CitationShortCircuit:
 
 
 class DenseSearch:
+    """Returns its hits rather than mutating ctx, so ParallelSearch can run
+    it concurrently with the other search stages."""
     def __init__(self, vector: VectorStore, embedder):
         self._vector = vector
         self._embedder = embedder
 
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+    async def __call__(self, ctx: RetrievalContext) -> list[dict]:
         if ctx.done:
-            return ctx
-        emb = self._embedder.embed_query(ctx.query)
-        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=_DENSE_N, as_of=ctx.as_of)])
-        return ctx
+            return []
+        emb = await asyncio.to_thread(self._embedder.embed_query, ctx.query)
+        hits = await self._vector.query(emb, n_results=_DENSE_N, as_of=ctx.as_of)
+        return [_to_provision_dict(h) for h in hits]
 
 
 class SparseSearch:
     def __init__(self, store: StructuredStore):
         self._store = store
 
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+    async def __call__(self, ctx: RetrievalContext) -> list[dict]:
         if ctx.done:
-            return ctx
-        ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(ctx.query, ctx.as_of)])
-        return ctx
+            return []
+        rows = await self._store.fts_search(ctx.query, ctx.as_of)
+        return [_to_provision_dict(r) for r in rows]
 
 
 class ProceduralAugment:
@@ -89,13 +92,45 @@ class ProceduralAugment:
         self._embedder = embedder
         self._store = store
 
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+    async def __call__(self, ctx: RetrievalContext) -> list[dict]:
+        if ctx.done:
+            return []
+        q = f"{ctx.query} {ctx.config.procedural_terms}"
+        emb = await asyncio.to_thread(self._embedder.embed_query, q)
+        hits, rows = await asyncio.gather(
+            self._vector.query(emb, n_results=_AUGMENT_N, as_of=ctx.as_of),
+            self._store.fts_search(q, ctx.as_of),
+        )
+        return [_to_provision_dict(h) for h in hits] + [_to_provision_dict(r) for r in rows]
+
+
+def _rrf_merge(ranked_lists: list[list[dict]], k: int = 60) -> list[dict]:
+    """Reciprocal Rank Fusion: combine several independently-ranked hit lists
+    into one, using each hit's rank within its own list rather than raw scores
+    (which aren't comparable across a vector store's cosine similarity and a
+    full-text search's ts_rank). Needed because Rerank is a no-op without a
+    configured reranker, making this the only ranking signal in that case."""
+    scores: dict[int, float] = {}
+    first_seen: dict[int, dict] = {}
+    for hits in ranked_lists:
+        for rank, hit in enumerate(hits):
+            pid = hit["provision_id"]
+            scores[pid] = scores.get(pid, 0.0) + 1.0 / (k + rank + 1)
+            first_seen.setdefault(pid, hit)
+    return sorted(first_seen.values(), key=lambda h: scores[h["provision_id"]], reverse=True)
+
+
+class ParallelSearch:
+    """Runs independent hit-returning stages concurrently, then merges their
+    results into ctx in a single-threaded step once all have completed."""
+    def __init__(self, stages: list):
+        self._stages = stages
+
+    async def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
         if ctx.done:
             return ctx
-        q = f"{ctx.query} {ctx.config.procedural_terms}"
-        emb = self._embedder.embed_query(q)
-        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=_AUGMENT_N, as_of=ctx.as_of)])
-        ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(q, ctx.as_of)])
+        results = await asyncio.gather(*(stage(ctx) for stage in self._stages))
+        ctx.add_all(_rrf_merge(results))
         return ctx
 
 
@@ -115,7 +150,12 @@ _STEP_BACK_PROMPT = (
 
 
 class StepBackExpand:
-    """Generate an abstracted query via the LLM and retrieve against it."""
+    """Generate an abstracted query via the LLM and retrieve against it.
+
+    Bounded by ctx.config.step_back_timeout_s: on timeout or LLM error, logs
+    and returns ctx unchanged so a slow/unavailable LLM never blocks the
+    final answer on this optional expansion step.
+    """
     def __init__(self, vector: VectorStore, embedder, store: StructuredStore,
                  llm: Optional[LLMProvider]):
         self._vector = vector
@@ -123,20 +163,30 @@ class StepBackExpand:
         self._store = store
         self._llm = llm
 
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+    async def _generate_and_search(self, ctx: RetrievalContext) -> None:
+        assert self._llm is not None  # __call__ already returned early if None
+        raw = await self._llm.complete(_STEP_BACK_PROMPT.format(query=ctx.query))
+        step_back = raw.strip()
+        if not step_back or step_back == ctx.query:
+            return
+        log.info("Step-back query: %s -> %s", ctx.query, step_back)
+        emb = await asyncio.to_thread(self._embedder.embed_query, step_back)
+        hits = await self._vector.query(emb, n_results=_AUGMENT_N, as_of=ctx.as_of)
+        ctx.add_all([_to_provision_dict(h) for h in hits])
+        rows = await self._store.fts_search(step_back, ctx.as_of)
+        ctx.add_all([_to_provision_dict(r) for r in rows])
+
+    async def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
         if ctx.done or not ctx.config.step_back_enabled or self._llm is None:
             return ctx
         try:
-            step_back = self._llm.complete(_STEP_BACK_PROMPT.format(query=ctx.query)).strip()
+            await asyncio.wait_for(
+                self._generate_and_search(ctx), timeout=ctx.config.step_back_timeout_s)
+        except asyncio.TimeoutError:
+            log.warning("Step-back timed out after %.1fs, skipping",
+                       ctx.config.step_back_timeout_s)
         except Exception:
             log.warning("Step-back generation failed, skipping", exc_info=True)
-            return ctx
-        if not step_back or step_back == ctx.query:
-            return ctx
-        log.info("Step-back query: %s -> %s", ctx.query, step_back)
-        emb = self._embedder.embed_query(step_back)
-        ctx.add_all([_to_provision_dict(h) for h in self._vector.query(emb, n_results=_AUGMENT_N, as_of=ctx.as_of)])
-        ctx.add_all([_to_provision_dict(r) for r in self._store.fts_search(step_back, ctx.as_of)])
         return ctx
 
 
@@ -144,7 +194,7 @@ class Rerank:
     def __init__(self, reranker=None):
         self._reranker = reranker
 
-    def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+    async def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
         if self._reranker is None or not ctx.candidates:
             return ctx
         from llama_index.core.schema import NodeWithScore, TextNode, QueryBundle

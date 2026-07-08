@@ -20,5 +20,9 @@ class SourceFetchError(LawboiError):
     """A law source failed to fetch or search."""
 
 
+class ContentBlockedError(LawboiError):
+    """Input failed the content-safety moderation check."""
+
+
 class ParseError(LawboiError):
     """Source content could not be parsed into provisions."""

@@ -8,15 +8,16 @@ from lawboi.ports.law_source import LawSource
 def test_llm_protocol_satisfied():
     class Stub:
         name = "stub"
-        def complete(self, prompt: str) -> str: return "x"
+        async def complete(self, prompt: str) -> str: return "x"
+        async def complete_structured(self, prompt: str, output_cls): return output_cls()
     assert isinstance(Stub(), LLMProvider)
 
 
 def test_vector_protocol_satisfied():
     class Stub:
-        def query(self, embedding, n_results, as_of): return []
-        def upsert(self, provision_id, embedding): ...
-        def batch_upsert(self, pairs): ...
+        async def query(self, embedding, n_results, as_of): return []
+        async def upsert(self, provision_id, embedding): ...
+        async def batch_upsert(self, pairs): ...
     assert isinstance(Stub(), VectorStore)
 
 

@@ -11,8 +11,10 @@ Usage:
     .venv/bin/python eval/retrieval_eval.py --json      # machine-readable output
 """
 import argparse
+import asyncio
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -75,7 +77,7 @@ def ndcg_at_k(results: list[dict], expected: list[dict], k: int) -> float:
     return dcg / idcg if idcg > 0 else 0.0
 
 
-def run_retrieval_eval(k: int, as_json: bool) -> None:
+async def run_retrieval_eval(k: int, as_json: bool) -> None:
     gold = json.loads(GOLD_SET_PATH.read_text())
     cases_with_expected = [c for c in gold if c["expected_provisions"]]
     all_cases = gold
@@ -83,12 +85,13 @@ def run_retrieval_eval(k: int, as_json: bool) -> None:
     if not as_json:
         print(f"Retrieval eval: {len(all_cases)} cases, k={k}\n")
 
-    engine = build_container(Settings()).retrieval
+    container = await build_container(Settings(database_url=os.getenv("DATABASE_URL", "")))
+    engine = container.retrieval
 
     per_case = []
     for case in all_cases:
         expected = case["expected_provisions"]
-        results = engine.retrieve(case["query"], limit=max(k, 20))
+        results = await engine.retrieve(case["query"], limit=max(k, 20))
 
         metrics = {
             "id": case["id"],
@@ -148,4 +151,4 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=5, help="Cutoff for @k metrics")
     parser.add_argument("--json", action="store_true", help="Output JSON instead of table")
     args = parser.parse_args()
-    run_retrieval_eval(args.k, args.json)
+    asyncio.run(run_retrieval_eval(args.k, args.json))

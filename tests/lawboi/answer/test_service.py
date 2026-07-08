@@ -1,5 +1,6 @@
 import pytest
 from lawboi.answer.service import AnswerService
+from lawboi.answer.citations import AnswerPayload, CitationOut
 from lawboi.domain.errors import NoSourcesFoundError
 from tests.lawboi.fakes import FakeLLMProvider
 
@@ -10,16 +11,19 @@ def _prov(section="97", eli="RT I 2009, 5, 35", title="TLS", is_translation=Fals
                          "is_translation": is_translation}}
 
 
-def test_raises_when_no_provisions():
+async def test_raises_when_no_provisions():
     svc = AnswerService(FakeLLMProvider())
     with pytest.raises(NoSourcesFoundError):
-        svc.answer("query", provisions=[])
+        await svc.answer("query", provisions=[])
 
 
-def test_returns_answer_dict_with_citations():
-    llm = FakeLLMProvider(responses=["Under § 97 notice applies."])
+async def test_returns_answer_dict_with_citations():
+    payload = AnswerPayload(
+        answer="Under § 97 notice applies.",
+        citations=[CitationOut(section="97", act_title="TLS")])
+    llm = FakeLLMProvider(structured_response=payload)
     svc = AnswerService(llm)
-    result = svc.answer("notice period?", provisions=[_prov()])
+    result = await svc.answer("notice period?", provisions=[_prov()])
     assert result["answer"] == "Under § 97 notice applies."
     assert result["model_used"] == "fake"
     assert result["citations"][0]["section"] == "§ 97"
@@ -27,8 +31,33 @@ def test_returns_answer_dict_with_citations():
     assert result["disclaimer"]
 
 
-def test_translation_warning_flag():
-    llm = FakeLLMProvider(responses=["§ 97 ..."])
+async def test_hallucinated_citation_is_dropped():
+    payload = AnswerPayload(
+        answer="Under § 5 something applies.",
+        citations=[CitationOut(section="5", act_title="Nonexistent Act")])
+    llm = FakeLLMProvider(structured_response=payload)
     svc = AnswerService(llm)
-    result = svc.answer("q", provisions=[_prov(is_translation=True)])
+    result = await svc.answer("q", provisions=[_prov()])
+    assert result["citations"] == []
+
+
+async def test_history_is_rendered_into_prompt():
+    payload = AnswerPayload(
+        answer="Under § 97 notice applies.",
+        citations=[CitationOut(section="97", act_title="TLS")])
+    llm = FakeLLMProvider(structured_response=payload)
+    svc = AnswerService(llm)
+    history = [{"role": "user", "content": "what is the notice period?"},
+               {"role": "assistant", "content": "It is 30 days."}]
+    await svc.answer("and what about severance?", provisions=[_prov()], history=history)
+    assert "what is the notice period?" in llm.calls[0]
+    assert "It is 30 days." in llm.calls[0]
+
+
+async def test_translation_warning_flag():
+    payload = AnswerPayload(
+        answer="§ 97 ...", citations=[CitationOut(section="97", act_title="TLS")])
+    llm = FakeLLMProvider(structured_response=payload)
+    svc = AnswerService(llm)
+    result = await svc.answer("q", provisions=[_prov(is_translation=True)])
     assert result["translation_warning"] is True

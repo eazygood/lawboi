@@ -31,5 +31,7 @@ def resolve_model(model: Optional[str]) -> str:
 def build_llm(model: Optional[str] = None) -> LLMProvider:
     name = resolve_model(model)
     spec = find_spec(name)
+    assert spec is not None  # resolve_model only returns names present in REGISTRY
     api_key = os.getenv(spec.api_key_env)
+    assert api_key is not None  # resolve_model already checked this env var is set
     return spec.build(name, api_key)

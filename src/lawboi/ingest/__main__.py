@@ -1,3 +1,6 @@
+import asyncio
+import os
+import signal
 import sys
 from datetime import date
 
@@ -45,8 +48,8 @@ def _is_better(candidate: ActMeta, incumbent: ActMeta, on: date) -> bool:
     return (candidate.effective_from or date.min) > (incumbent.effective_from or date.min)
 
 
-def run_ingest(query: str) -> None:
-    container = build_container(Settings())
+async def run_ingest(query: str) -> None:
+    container = await build_container(Settings(database_url=os.getenv("DATABASE_URL", "")))
     source = RiigiTeatajaSource()
 
     if query.isdigit():
@@ -68,7 +71,11 @@ def run_ingest(query: str) -> None:
 
     for gid in ids:
         print(f"  Fetching globaalID={gid} ({titles[gid]})...")
-        raw = source.fetch(gid)
+        try:
+            raw = source.fetch(gid)
+        except SourceFetchError as e:
+            print(f"    Fetch failed for {gid}: {e} — skipping.")
+            continue
         source_hash = compute_hash(raw.xml)
         parsed = parse_act(raw.xml, act_version_id=0)
         title_xml = parsed.title or titles[gid]
@@ -83,62 +90,110 @@ def run_ingest(query: str) -> None:
         version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
                              source_global_id=gid)
         chunks = chunk_provisions(parsed.provisions, act_title=title_xml, eli=eli)
-        container.ingest.index_act(act, version, parsed.provisions, chunks)
+        await container.ingest.index_act(act, version, parsed.provisions, chunks)
         print(f"    Indexed {len(parsed.provisions)} provisions.")
 
 
-def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False) -> None:
+async def _ingest_one(container, source, tid: int, m, today: date) -> str:
+    """Fetch, parse, chunk, and index one act. Returns a human-readable status
+    message; does not print — callers own their own progress-line formatting."""
+    eli = str(tid)
+    try:
+        raw = await asyncio.to_thread(source.fetch, m.global_id)
+    except SourceFetchError as e:
+        return f"{m.title}: fetch failed — {e}"
+    source_hash = compute_hash(raw.xml)
+    parsed = parse_act(raw.xml, act_version_id=0)
+    title = parsed.title or m.title
+    eff_from = parsed.effective_from or m.effective_from or today
+    eff_to = parsed.effective_to or m.effective_to
+
+    if not parsed.provisions:
+        return f"{title}: no provisions parsed — skipping."
+    act = Act(None, eli, title, None, "general", m.liik or "seadus")
+    version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
+                         source_global_id=m.global_id)
+    chunks = chunk_provisions(parsed.provisions, act_title=title, eli=eli)
+    await container.ingest.index_act(act, version, parsed.provisions, chunks)
+    return f"{title}: {len(parsed.provisions)} provisions."
+
+
+async def _run_workers(container, source, items: list, today: date,
+                       concurrency: int, shutdown: asyncio.Event) -> tuple[int, int]:
+    """Drains `items` through `concurrency` workers pulling from a shared
+    queue. Workers check `shutdown` before pulling their next item, so
+    whatever's already in flight finishes normally instead of being
+    cancelled — the caller is responsible for setting `shutdown`.
+    Returns (done, remaining)."""
+    queue: asyncio.Queue = asyncio.Queue()
+    for tid, m in items:
+        queue.put_nowait((tid, m))
+    queued = queue.qsize()
+    done = 0
+
+    async def worker():
+        nonlocal done
+        while not shutdown.is_set():
+            try:
+                tid, m = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            msg = await _ingest_one(container, source, tid, m, today)
+            done += 1
+            print(f"  [{done}/{queued}] {msg}")
+
+    await asyncio.gather(*(worker() for _ in range(concurrency)))
+    return done, queue.qsize()
+
+
+async def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False,
+                     concurrency: int = 5) -> None:
     """Crawl the full corpus for the given document types and ingest the
     current in-force text of each distinct act. Incremental by default:
     redaktsioonid whose globaalID is already ingested are skipped before the
     XML fetch, so re-runs only download new or amended acts. Pass force=True to
-    re-fetch every act (e.g. after a parser or embedding change)."""
-    container = build_container(Settings())
+    re-fetch every act (e.g. after a parser or embedding change). Runs
+    `concurrency` acts through fetch+index at once; Ctrl-C stops handing out
+    new work but lets whatever's in flight finish before exiting."""
+    container = await build_container(Settings(database_url=os.getenv("DATABASE_URL", "")))
+    if container.store is None:
+        raise RuntimeError("Store is not configured")
     source = RiigiTeatajaSource()
     today = date.today()
 
     print(f"Crawling corpus index for {list(doc_types)}...")
     current = select_current_versions(source.iter_corpus(doc_types), today)
     total = len(current)
-    seen = set() if force else container.store.ingested_global_ids()
-    skipped = 0
+    seen = set() if force else await container.store.ingested_global_ids()
+    items = [(tid, m) for tid, m in sorted(current.items())
+             if force or m.global_id not in seen]
+    skipped = total - len(items)
     print(f"{total} distinct acts after dedup. Ingesting current text of each...")
 
-    for i, (tid, m) in enumerate(sorted(current.items()), 1):
-        if not force and m.global_id in seen:
-            skipped += 1
-            continue
-        eli = str(tid)
-        try:
-            raw = source.fetch(m.global_id)
-        except SourceFetchError as e:
-            print(f"  [{i}/{total}] {m.title}: fetch failed — {e}")
-            continue
-        source_hash = compute_hash(raw.xml)
-        parsed = parse_act(raw.xml, act_version_id=0)
-        title = parsed.title or m.title
-        eff_from = parsed.effective_from or m.effective_from or today
-        eff_to = parsed.effective_to or m.effective_to
+    shutdown = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(signal.SIGINT, shutdown.set)
+    try:
+        done, remaining = await _run_workers(container, source, items, today,
+                                             concurrency, shutdown)
+    finally:
+        loop.remove_signal_handler(signal.SIGINT)
 
-        if not parsed.provisions:
-            print(f"  [{i}/{total}] {title}: no provisions parsed — skipping.")
-            continue
-        act = Act(None, eli, title, None, "general", m.liik or "seadus")
-        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
-                             source_global_id=m.global_id)
-        chunks = chunk_provisions(parsed.provisions, act_title=title, eli=eli)
-        container.ingest.index_act(act, version, parsed.provisions, chunks)
-        print(f"  [{i}/{total}] {title}: {len(parsed.provisions)} provisions.")
-
-    print(f"Done. Ingested {total - skipped}, skipped {skipped} unchanged.")
+    if shutdown.is_set():
+        print(f"Interrupted — {done} ingested this run, {remaining} remaining queued for next run.")
+    else:
+        print(f"Done. Ingested {done}, skipped {skipped} unchanged.")
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if not args:
-        print("Usage: python -m lawboi.ingest <query|globaalID> | --all [--force]")
+        print("Usage: python -m lawboi.ingest <query|globaalID> | --all [--force] [--concurrency N]")
         sys.exit(1)
     if args[0] == "--all":
-        run_corpus(force="--force" in args[1:])
+        concurrency = 5
+        if "--concurrency" in args[1:]:
+            concurrency = int(args[args.index("--concurrency") + 1])
+        asyncio.run(run_corpus(force="--force" in args[1:], concurrency=concurrency))
     else:
-        run_ingest(args[0])
+        asyncio.run(run_ingest(args[0]))

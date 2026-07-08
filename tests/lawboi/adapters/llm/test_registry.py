@@ -42,4 +42,6 @@ def test_resolve_raises_when_nothing_configured(monkeypatch):
 
 
 def test_find_spec():
-    assert find_spec("gpt-4o").provider == "openai"
+    spec = find_spec("gpt-4o")
+    assert spec is not None
+    assert spec.provider == "openai"

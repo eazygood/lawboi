@@ -18,12 +18,14 @@ export interface AnswerResponse {
   language_detected: string
   translation_warning: boolean
   disclaimer: string
+  conversation_id: number
 }
 
 export interface AnswerRequest {
   query: string
   model?: string
   as_of_date?: string
+  conversation_id?: number
 }
 
 export interface ProvisionResult {

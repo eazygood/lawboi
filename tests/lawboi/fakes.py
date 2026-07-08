@@ -1,36 +1,46 @@
 from datetime import date, timedelta
-from typing import Optional
+from typing import Optional, TypeVar
+
+from pydantic import BaseModel
 
 from lawboi.domain.models import Act, ActVersion, Provision
 from lawboi.domain.dto import VectorHit, ActMeta, RawAct, RetrievedProvision
+
+Model = TypeVar("Model", bound=BaseModel)
 
 
 class FakeLLMProvider:
     name = "fake"
 
-    def __init__(self, responses: Optional[list[str]] = None):
+    def __init__(self, responses: Optional[list[str]] = None,
+                 structured_response: Optional[BaseModel] = None):
         self._responses = list(responses or ["FAKE ANSWER"])
+        self._structured_response = structured_response
         self.calls: list[str] = []
 
-    def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str) -> str:
         self.calls.append(prompt)
         return self._responses.pop(0) if len(self._responses) > 1 else self._responses[0]
+
+    async def complete_structured(self, prompt: str, output_cls: type[Model]) -> Model:
+        self.calls.append(prompt)
+        return self._structured_response  # type: ignore[return-value]
 
 
 class InMemoryVectorStore:
     def __init__(self):
         self._embeddings: dict[int, list[float]] = {}
 
-    def upsert(self, provision_id: int, embedding: list[float]) -> None:
+    async def upsert(self, provision_id: int, embedding: list[float]) -> None:
         self._embeddings[provision_id] = embedding
 
-    def query(self, embedding: list[float], n_results: int, as_of: date) -> list[VectorHit]:
+    async def query(self, embedding: list[float], n_results: int, as_of: date) -> list[VectorHit]:
         return [
             VectorHit(provision_id=pid, section_num="", text="", metadata={})
             for pid in list(self._embeddings.keys())[:n_results]
         ]
 
-    def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
+    async def batch_upsert(self, pairs: list[tuple[int, list[float]]]) -> None:
         for pid, emb in pairs:
             self._embeddings[pid] = emb
 
@@ -43,6 +53,8 @@ class InMemoryStructuredStore:
         # maps (act_id, effective_from) -> version_id for idempotency
         self._version_keys: dict[tuple, int] = {}
         self._provisions: list[Provision] = []
+        self._conversations: set[int] = set()
+        self._messages: list[dict] = []
         self._next = 1
 
     def _id(self):
@@ -50,14 +62,14 @@ class InMemoryStructuredStore:
         self._next += 1
         return n
 
-    def upsert_act(self, act: Act) -> int:
+    async def upsert_act(self, act: Act) -> int:
         if act.eli not in self._acts:
             self._acts[act.eli] = self._id()
         act.id = self._acts[act.eli]
         self._act_objs[act.eli] = act
         return self._acts[act.eli]
 
-    def upsert_act_version(self, version: ActVersion) -> int:
+    async def upsert_act_version(self, version: ActVersion) -> int:
         # Idempotent on (act_id, effective_from), mirroring the real Postgres upsert.
         key = (version.act_id, version.effective_from)
         if key in self._version_keys:
@@ -74,44 +86,53 @@ class InMemoryStructuredStore:
                 v.effective_to = version.effective_from - timedelta(days=1)
         return vid
 
-    def ingested_global_ids(self) -> set[int]:
+    async def ingested_global_ids(self) -> set[int]:
+        indexed_version_ids = {p.act_version_id for p in self._provisions}
         return {v.source_global_id for v in self._versions.values()
-                if v.source_global_id is not None}
+                if v.source_global_id is not None and v.id in indexed_version_ids}
 
-    def insert_provision(self, provision: Provision) -> int:
+    async def insert_provision(self, provision: Provision) -> int:
         pid = self._id()
         provision.id = pid
         self._provisions.append(provision)
         return pid
 
-    def version_has_provisions(self, act_version_id: int) -> bool:
+    async def version_fully_indexed(self, act_version_id: int) -> bool:
+        # This fake has no notion of embeddings (InMemoryVectorStore is a
+        # separate object), so "fully indexed" here means "has provisions" —
+        # the embedding-aware half of this check only exists in PostgresStore.
         return any(p.act_version_id == act_version_id for p in self._provisions)
 
+    async def delete_provisions_for_version(self, act_version_id: int) -> None:
+        self._provisions = [p for p in self._provisions
+                            if p.act_version_id != act_version_id]
+
     def _to_rp(self, p: Provision) -> RetrievedProvision:
+        assert p.id is not None  # already inserted, so always set on stored provisions
         return RetrievedProvision(
             provision_id=p.id, section_num=p.section_num, text=p.text_et,
             metadata={"section_num": p.section_num, "act_version_id": p.act_version_id,
                       "is_translation": False, "context": ""},
         )
 
-    def fts_search(self, query: str, effective_date: date) -> list[RetrievedProvision]:
+    async def fts_search(self, query: str, effective_date: date) -> list[RetrievedProvision]:
         terms = query.lower().split()
         return [self._to_rp(p) for p in self._provisions
                 if any(t in p.text_et.lower() for t in terms)]
 
-    def exact_lookup(self, section_num, as_of, limit, eli, title_query):
+    async def exact_lookup(self, section_num, as_of, limit, eli, title_query):
         return [self._to_rp(p) for p in self._provisions
                 if p.section_num == section_num][:limit]
 
-    def get_act(self, eli: str) -> Optional[Act]:
+    async def get_act(self, eli: str) -> Optional[Act]:
         return self._act_objs.get(eli)
 
-    def list_act_versions(self, eli: str) -> list[ActVersion]:
+    async def list_act_versions(self, eli: str) -> list[ActVersion]:
         act_id = self._acts.get(eli)
         versions = [v for v in self._versions.values() if v.act_id == act_id]
         return sorted(versions, key=lambda v: v.effective_from, reverse=True)
 
-    def provisions_as_of(self, eli: str, on: date) -> list[Provision]:
+    async def provisions_as_of(self, eli: str, on: date) -> list[Provision]:
         act_id = self._acts.get(eli)
         version_ids = {
             vid for vid, v in self._versions.items()
@@ -120,6 +141,19 @@ class InMemoryStructuredStore:
             and (v.effective_to is None or v.effective_to >= on)
         }
         return [p for p in self._provisions if p.act_version_id in version_ids]
+
+    async def create_conversation(self) -> int:
+        cid = self._id()
+        self._conversations.add(cid)
+        return cid
+
+    async def append_message(self, conversation_id: int, role: str, content: str) -> None:
+        self._messages.append(
+            {"conversation_id": conversation_id, "role": role, "content": content})
+
+    async def recent_messages(self, conversation_id: int, limit: int = 10) -> list[dict]:
+        msgs = [m for m in self._messages if m["conversation_id"] == conversation_id]
+        return [{"role": m["role"], "content": m["content"]} for m in msgs[-limit:]]
 
 
 class FakeLawSource:

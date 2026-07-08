@@ -7,3 +7,9 @@
 __pycache__/
 *.pyc
 *.egg-info/
+
+ui/.npmrc
+
+.superpowers/
+docs/superpowers/
+

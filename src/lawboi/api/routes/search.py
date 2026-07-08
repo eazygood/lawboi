@@ -9,8 +9,8 @@ router = APIRouter()
 
 @router.post("/search", response_model=list[ProvisionResult])
 @limiter.limit("30/minute")
-def search(request: Request, req: SearchRequest, retrieval=Depends(get_retrieval)):
-    provisions = retrieval.retrieve(req.query, as_of=req.as_of_date, limit=req.limit)
+async def search(request: Request, req: SearchRequest, retrieval=Depends(get_retrieval)):
+    provisions = await retrieval.retrieve(req.query, as_of=req.as_of_date, limit=req.limit)
     return [
         ProvisionResult(
             provision_id=p["provision_id"],

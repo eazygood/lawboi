@@ -2,13 +2,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from lawboi.domain.errors import (
-    NoSourcesFoundError, UnsupportedModelError, NoModelConfiguredError,
+    NoSourcesFoundError, UnsupportedModelError, NoModelConfiguredError, ContentBlockedError,
 )
 
 _STATUS = {
     NoSourcesFoundError: 422,
     UnsupportedModelError: 400,
     NoModelConfiguredError: 503,
+    ContentBlockedError: 400,
 }
 
 

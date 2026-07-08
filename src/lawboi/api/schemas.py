@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class AnswerRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     as_of_date: Optional[date] = None
+    conversation_id: Optional[int] = None
 
 
 class Citation(BaseModel):
@@ -23,6 +24,7 @@ class AnswerResponse(BaseModel):
     language_detected: str
     translation_warning: bool
     disclaimer: str
+    conversation_id: int
 
 
 class SearchRequest(BaseModel):
