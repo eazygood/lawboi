@@ -7,6 +7,7 @@ pydantic-settings>=2.0
 python-dotenv>=1.0
 psycopg[binary,pool]>=3.2
 requests>=2.32
+tqdm>=4.66
 
 # LlamaIndex + LLM providers
 llama-index-core>=0.12

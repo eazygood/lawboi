@@ -16,12 +16,12 @@ src/lawboi/
                source/ (parser, riigiteataja)
   pipeline/    retrieval stages + RetrievalService
   ingest/      offline pipeline: parse XML → chunk → embed → write (PG + vectors)
-  answer/      prompts, citation extraction, AnswerService
+  answer/      prompts, structured citations, LLM-based moderation, AnswerService
   config/      settings, composition root
   api/         FastAPI app: /answer, /models, /search, /acts/:eli, /health
 ui/            Next.js 15 chat interface with source panel and model selector
 eval/          gold set (30 Q&As) + evaluation runner
-db/            schema.sql (Postgres + pgvector)
+db/            schema.sql (Postgres + pgvector) + migrations/ for existing databases
 ```
 
 Embeddings are stored in the `provision.embedding` `vector(1024)` column — there is no
@@ -41,6 +41,7 @@ the same database.
 | Frontend | Next.js 15 (TypeScript, App Router, Tailwind) |
 | Infra | Docker Compose |
 | Reranker | Cohere Rerank (optional — no-op when `COHERE_API_KEY` is unset) |
+| DB driver | psycopg3, fully async (`AsyncConnectionPool`) end-to-end, including ingest |
 
 ## Running locally
 
@@ -112,12 +113,17 @@ secondary legislation (configurable via `CORPUS_DOC_TYPES`):
 
 ```bash
 python -m lawboi.ingest --all
+python -m lawboi.ingest --all --concurrency 10   # default is 5
 ```
 
 > `määrus` is a large category (many thousands of regulations), so the first full crawl
 > takes hours and produces a large embedding set. Run it once locally, then ship the
 > validated dataset with `pg_dump`/`pg_restore` (see [Deployment](#deployment)) and let
 > incremental re-runs keep it current.
+
+> `--all` runs `--concurrency` acts through fetch+index at once. Ctrl-C stops handing out
+> new work but lets in-flight acts finish before exiting — safe to interrupt, since
+> already-ingested acts are skipped on the next run anyway.
 
 **Incremental by default.** Each act's ingested Riigi Teataja redaktsioon is tracked by
 its `globaalID` (`act_version.source_global_id`). On re-runs, `--all` pages the corpus
@@ -133,6 +139,10 @@ needed after a parser or embedding change.
 > **Existing databases:** the skip set relies on the `act_version.source_global_id`
 > column. Fresh installs get it from `db/schema.sql`; apply it to an already-initialised
 > DB before ingesting with `psql "$DATABASE_URL" -f db/migrations/001_source_global_id.sql`.
+
+> **Existing databases, multi-turn support:** fresh installs get the `conversation`/
+> `message` tables from `db/schema.sql`; apply them to an already-initialised DB with
+> `psql "$DATABASE_URL" -f db/migrations/002_conversations.sql`.
 
 > **Note:** The RT API endpoint format (`RT_BASE_URL` in `.env`) should be verified against real Riigiteataja responses before running at scale.
 
@@ -153,6 +163,12 @@ curl -s -X POST http://localhost:8000/answer \
 curl -s -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{"query": "puhkus", "limit": 5}' | jq .
+
+# Multi-turn: pass back the conversation_id from a prior /answer response to continue
+# the thread (the last 5 turns are sent to the LLM verbatim as context)
+curl -s -X POST http://localhost:8000/answer \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Ja mis saab, kui tööandja seda ei järgi?", "conversation_id": 1}' | jq .
 ```
 
 ## Running tests
@@ -208,11 +224,23 @@ Postgres + pgvector, embedding the corpus locally and shipping it with a single
 | `GET` | `/acts/{eli}/as-of?date=` | Get provisions effective on a date |
 | `GET` | `/health` | Health check |
 
-`/answer` is rate limited to 10/min and `/search` to 30/min per IP.
+`/answer` is rate limited to 10/min and `/search` to 30/min per IP (configurable via the
+`ANSWER_RATE_LIMIT`/`SEARCH_RATE_LIMIT` env vars). The production image runs
+`uvicorn --workers 4`; slowapi's rate-limit counters are in-memory per worker, so
+effective per-IP limits multiply across workers — not exact under multi-worker.
 
 ## Important Notes
 
 - **No answer without sources** — if no relevant provisions are found, the API returns 422
 - **Estonian is authoritative** — English translations are assistive only
 - **Not legal advice** — every response includes a disclaimer; this tool provides legal information only
+- **Multi-turn conversations** — omit `conversation_id` to start a new thread (every response
+  returns one); pass it back on the next call to continue. History is the last 5 turns, sent
+  to the LLM verbatim — no summarization.
+- **Citations are enforced, not parsed** — the LLM returns structured output (answer +
+  citations) rather than free text; any citation that doesn't match a provision actually
+  retrieved for the request is dropped before the response is sent.
+- **Content moderation** — both the question and the generated answer are checked via an
+  LLM-based classifier. Flagged input is rejected (400); a flagged answer is replaced with a
+  generic refusal message rather than returned as-is.
 - XML tag names in `src/lawboi/adapters/source/parser.py` (`TAGS` dict) may need adjustment after verifying against real RT XML

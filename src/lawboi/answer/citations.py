@@ -70,7 +70,32 @@ def validate_citations(citations: list[CitationOut], provisions: list[dict]) -> 
     return result
 
 
+_ESTONIAN_CHARS = set("äöüõšž")
+
+# Common function words as a fallback signal for Estonian questions that happen to
+# have no diacritics (e.g. "Kui kaua on mul aega vaidlustada?").
+_ESTONIAN_WORDS = {
+    "mis", "kus", "kes", "kas", "kui", "kuidas", "miks", "millal", "kaua",
+    "ja", "ning", "või", "ei", "ega", "on", "ma", "mul", "mulle", "mind", "minu",
+    "sa", "sul", "sulle", "sind", "sinu", "ta", "tema", "meie", "teie", "nemad",
+    "see", "seda", "selle", "oma", "aga", "siis", "palun", "aitäh",
+    "tööandja", "töötaja", "seadus", "õigus",
+}
+_ENGLISH_WORDS = {
+    "the", "is", "are", "what", "how", "when", "where", "why", "who",
+    "can", "could", "should", "would", "this", "that", "and", "or", "but",
+    "please", "thanks", "thank", "you", "my", "your", "employer", "employee",
+    "law", "rights", "does", "did", "will", "have", "has",
+}
+
+
 def detect_language(text: str) -> str:
-    estonian_chars = set("äöüõšž")
-    count = sum(1 for c in text.lower() if c in estonian_chars)
-    return "et" if count >= 1 else "en"
+    lowered = text.lower()
+    if any(c in _ESTONIAN_CHARS for c in lowered):
+        return "et"
+    words = set(re.findall(r"[a-zäöüõšž]+", lowered))
+    et_hits = len(words & _ESTONIAN_WORDS)
+    en_hits = len(words & _ENGLISH_WORDS)
+    if et_hits > 0 and et_hits >= en_hits:
+        return "et"
+    return "en"  # default: matches prior behavior when no Estonian signal is found

@@ -7,6 +7,8 @@ from datetime import date
 from dotenv import load_dotenv
 load_dotenv()
 
+from tqdm import tqdm
+
 from lawboi.config.settings import Settings
 from lawboi.config.composition import build_container
 from lawboi.adapters.source.riigiteataja import RiigiTeatajaSource
@@ -131,18 +133,20 @@ async def _run_workers(container, source, items: list, today: date,
     queued = queue.qsize()
     done = 0
 
-    async def worker():
-        nonlocal done
-        while not shutdown.is_set():
-            try:
-                tid, m = queue.get_nowait()
-            except asyncio.QueueEmpty:
-                return
-            msg = await _ingest_one(container, source, tid, m, today)
-            done += 1
-            print(f"  [{done}/{queued}] {msg}")
+    with tqdm(total=queued, desc="Ingesting", unit="act") as pbar:
+        async def worker():
+            nonlocal done
+            while not shutdown.is_set():
+                try:
+                    tid, m = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                msg = await _ingest_one(container, source, tid, m, today)
+                done += 1
+                pbar.write(f"  [{done}/{queued}] {msg}")
+                pbar.update(1)
 
-    await asyncio.gather(*(worker() for _ in range(concurrency)))
+        await asyncio.gather(*(worker() for _ in range(concurrency)))
     return done, queue.qsize()
 
 

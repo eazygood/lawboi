@@ -28,6 +28,10 @@ def test_detect_language_short_query_with_few_diacritics():
     assert detect_language("Mis on katseaja kestus töölepingus?") == "et"
 
 
+def test_detect_language_estonian_with_no_diacritics():
+    assert detect_language("Kui kaua on mul aega vaidlustada?") == "et"
+
+
 def test_format_context_includes_section_and_eli():
     out = format_context([_prov("97", "RT I 2009, 5, 35", "TLS")])
     assert "§ 97" in out and "RT I 2009, 5, 35" in out
