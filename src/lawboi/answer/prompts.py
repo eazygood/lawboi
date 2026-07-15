@@ -9,7 +9,7 @@ def format_history(history: Optional[list[dict]]) -> str:
 
 
 SYSTEM_PROMPT = """\
-You are Eesti Õigusabi, a legal information assistant for Estonian law.
+You are ParagrahvAI, a legal information assistant for Estonian law.
 You answer questions strictly based on the legal provisions provided below.
 
 RULES:

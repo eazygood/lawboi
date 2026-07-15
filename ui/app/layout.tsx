@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Eesti Õigusabi",
+  title: "ParagrahvAI",
   description: "Source-cited Estonian law assistant",
 };
 

@@ -1,4 +1,4 @@
-# Eesti Õigusabi
+# ParagrahvAI
 
 A source-cited Estonian law RAG chatbot for accountants. Ask questions about Estonian tax, employment, and company law — every answer cites the exact legal provision from Riigi Teataja.
 
@@ -114,6 +114,7 @@ secondary legislation (configurable via `CORPUS_DOC_TYPES`):
 ```bash
 python -m lawboi.ingest --all
 python -m lawboi.ingest --all --concurrency 10   # default is 5
+python -m lawboi.ingest --all --doc-type seadus  # crawl+ingest only one doc type
 ```
 
 > `määrus` is a large category (many thousands of regulations), so the first full crawl
@@ -228,6 +229,19 @@ Postgres + pgvector, embedding the corpus locally and shipping it with a single
 `ANSWER_RATE_LIMIT`/`SEARCH_RATE_LIMIT` env vars). The production image runs
 `uvicorn --workers 4`; slowapi's rate-limit counters are in-memory per worker, so
 effective per-IP limits multiply across workers — not exact under multi-worker.
+
+## TODO
+
+- **Schedule automated corpus ingest.** `--all` is already safe to re-run (see
+  [Ingest laws](#3-ingest-laws)) — it re-crawls the full Riigi Teataja index, skips
+  already-ingested `globaalID`s, and closes out superseded versions without losing any
+  historical text/embeddings. Nothing currently triggers it automatically though. Add a
+  weekly job (weekend night, low-traffic window — e.g. Sunday ~02:00 UTC) running
+  `python -m lawboi.ingest --all --concurrency 5` against the live `DATABASE_URL`, e.g.
+  via a GitHub Actions scheduled workflow or a cron/systemd timer on the deploy box (see
+  [Deployment](#deployment)). Note: `build_container` always constructs an LLM client
+  even for ingest, so the job needs an LLM API key secret configured even though ingest
+  itself never calls the LLM.
 
 ## Important Notes
 

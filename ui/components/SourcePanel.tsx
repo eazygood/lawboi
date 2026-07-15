@@ -1,46 +1,71 @@
 "use client"
 
+import { useEffect } from "react"
 import { Citation } from "@/lib/api"
 
 interface Props {
   citations: Citation[]
+  open: boolean
+  activeIndex: number | null
   onClose: () => void
 }
 
-export default function SourcePanel({ citations, onClose }: Props) {
+export default function SourcePanel({ citations, open, activeIndex, onClose }: Props) {
+  useEffect(() => {
+    if (open && activeIndex !== null) {
+      document.getElementById(`cite-${activeIndex}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }
+  }, [open, activeIndex])
+
   return (
-    <aside className="fixed right-0 top-0 h-full w-80 bg-white shadow-xl border-l overflow-y-auto z-10">
-      <div className="flex justify-between items-center p-4 border-b">
-        <h2 className="font-semibold text-gray-700">Sources</h2>
+    <aside className={`citations-panel lg:border-l lg:border-slate-200 ${open ? "open" : ""}`}>
+      <div className="flex justify-center pt-2 pb-1 lg:hidden">
+        <div className="w-8 h-1 rounded-full bg-slate-200" />
+      </div>
+      <div className="h-14 shrink-0 border-b border-slate-200 flex items-center justify-between px-5">
+        <h2 className="text-sm font-semibold text-slate-800">Allikad ({citations.length})</h2>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-          aria-label="Close source panel"
+          className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+          aria-label="Sulge allikate paneel"
         >
-          ×
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
-      {citations.length === 0 ? (
-        <p className="p-4 text-sm text-gray-400">No citations for this answer.</p>
-      ) : (
-        <ul className="divide-y">
-          {citations.map((c, i) => (
-            <li key={i} className="p-4">
-              <p className="font-medium text-sm text-gray-800">{c.act_title}</p>
-              <p className="text-sm text-gray-600">{c.section} {c.subsection}</p>
-              <p className="text-xs text-gray-400 mt-1">{c.eli}</p>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {citations.length === 0 ? (
+          <p className="text-sm text-slate-400">Selle vestuse jaoks pole viiteid.</p>
+        ) : (
+          citations.map((c, i) => (
+            <div
+              key={i}
+              id={`cite-${i + 1}`}
+              className={`citation-card border border-slate-200 rounded-lg p-3.5 transition-all ${
+                activeIndex === i + 1 ? "active" : ""
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-bold text-white bg-[#1e3a5f] rounded px-1.5 py-0.5">
+                  {i + 1}
+                </span>
+                <span className="text-[11px] text-slate-400">{c.eli}</span>
+              </div>
+              <p className="text-sm font-medium text-slate-800">{c.act_title}</p>
+              <p className="text-sm text-slate-600 mt-0.5">{c.section} {c.subsection}</p>
               <a
                 href={c.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-blue-500 hover:underline mt-1 block"
+                className="text-xs text-[#1e3a5f] hover:underline mt-2.5 inline-block"
               >
-                View on riigiteataja.ee →
+                Vaata Riigi Teatajas →
               </a>
-            </li>
-          ))}
-        </ul>
-      )}
+            </div>
+          ))
+        )}
+      </div>
     </aside>
   )
 }

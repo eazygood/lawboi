@@ -16,7 +16,7 @@ from lawboi.config.settings import load_settings  # noqa: E402
 
 _settings = load_settings()
 
-app = FastAPI(title="Eesti Õigusabi API", version="0.2.0")
+app = FastAPI(title="ParagrahvAI API", version="0.2.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]  # slowapi types handler as (Request, RateLimitExceeded) but FastAPI expects (Request, Exception)
 

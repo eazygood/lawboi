@@ -12,15 +12,59 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Markdown answer rendering (react-markdown output) */
+.answer-content { font-size: 13.5px; line-height: 1.65; color: #334155; }
+.answer-content p { margin-bottom: 0.75rem; }
+.answer-content p:last-child { margin-bottom: 0; }
+.answer-content ul, .answer-content ol { margin: 0.5rem 0 0.75rem 1.25rem; }
+.answer-content ul { list-style: disc; }
+.answer-content ol { list-style: decimal; }
+.answer-content li { margin-bottom: 0.35rem; }
+.answer-content strong { font-weight: 600; color: #1e293b; }
+.answer-content h1, .answer-content h2, .answer-content h3 {
+  font-weight: 600; margin: 1rem 0 0.5rem; color: #1e293b;
+}
+
+/* Inline citation marker rendered from `[N](#cite-N)` links */
+.cite-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.1rem; height: 1.1rem; padding: 0 0.25rem;
+  font-size: 0.65rem; font-weight: 600; border-radius: 0.25rem;
+  background: #e0e7ef; color: #1e3a5f; margin: 0 1px;
+  cursor: pointer; vertical-align: text-top; line-height: 1.1rem;
+  border: none; transition: background 0.15s;
+}
+.cite-marker:hover { background: #1e3a5f; color: #ffffff; }
+
+/* Citations panel: bottom sheet on mobile, static side column on desktop (>=1024px) */
+.citations-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  max-height: 78vh;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 1rem 1rem 0 0;
+  background: white;
+  transform: translateY(100%);
+  transition: transform 0.22s ease;
+  display: flex; flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.citations-panel.open { transform: translateY(0); }
+
+@media (min-width: 1024px) {
+  .citations-panel {
+    position: static; width: 22rem; max-height: none;
+    border-top: 0; border-left: 1px solid #e2e8f0; border-radius: 0;
+    transform: none; display: none; padding-bottom: 0;
+  }
+  .citations-panel.open { display: flex; }
+}
+
+.citation-card.active {
+  border-color: #1e3a5f; background: #f8fafc; box-shadow: 0 0 0 1px #1e3a5f inset;
 }

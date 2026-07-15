@@ -192,12 +192,19 @@ async def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False,
 if __name__ == "__main__":
     args = sys.argv[1:]
     if not args:
-        print("Usage: python -m lawboi.ingest <query|globaalID> | --all [--force] [--concurrency N]")
+        print("Usage: python -m lawboi.ingest <query|globaalID> | --all [--force] [--concurrency N] [--doc-type seadus|määrus]")
         sys.exit(1)
     if args[0] == "--all":
         concurrency = 5
         if "--concurrency" in args[1:]:
             concurrency = int(args[args.index("--concurrency") + 1])
-        asyncio.run(run_corpus(force="--force" in args[1:], concurrency=concurrency))
+        doc_types = CORPUS_DOC_TYPES
+        if "--doc-type" in args[1:]:
+            doc_type = args[args.index("--doc-type") + 1]
+            if doc_type not in CORPUS_DOC_TYPES:
+                print(f"Unknown doc type '{doc_type}' — choose from {CORPUS_DOC_TYPES}.")
+                sys.exit(1)
+            doc_types = (doc_type,)
+        asyncio.run(run_corpus(doc_types=doc_types, force="--force" in args[1:], concurrency=concurrency))
     else:
         asyncio.run(run_ingest(args[0]))

@@ -11,9 +11,9 @@ RAW_DATA_DIR = Path(os.getenv("RAW_DATA_DIR", "data/raw"))
 REQUEST_DELAY = 1.0
 _SEARCH_URL = f"{RT_BASE_URL}/api/oigusakt_otsing/1/otsi"
 
-# Document types crawled by the full-corpus ingest. määrus (~91k version-rows,
-# mostly off-domain for accountants) is intentionally excluded for now — adding
-# it later is a one-element change here.
+# Document types crawled by the full-corpus ingest — the binding primary (seadus) and
+# secondary (määrus) legislation. määrus is a large category (~91k version-rows, mostly
+# off-domain for accountants), so a full --all crawl takes hours (see README).
 CORPUS_DOC_TYPES = ("seadus", "määrus")
 
 
@@ -71,6 +71,7 @@ def iter_corpus(
     terviktekstID.
     """
     for doc in doc_types:
+        print(f"  Crawling '{doc}'...", flush=True)
         leht = 1
         seen = 0
         while True:
@@ -92,6 +93,7 @@ def iter_corpus(
             yield from rows
             seen += len(rows)
             total = data.get("metaandmed", {}).get("kokku", 0)
+            print(f"    '{doc}': page {leht} — {seen}/{total} rows", flush=True)
             if seen >= total:
                 break
             leht += 1
