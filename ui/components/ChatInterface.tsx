@@ -133,6 +133,7 @@ export default function ChatInterface({ availableModels }: Props) {
                         <AnswerContent
                           answer={msg.content}
                           citations={msg.response?.citations ?? []}
+                          unverifiedSections={msg.response?.unverified_sections ?? []}
                           onCitationClick={(index) => openCitations(msg.response?.citations ?? [], index)}
                         />
                       </div>
@@ -148,6 +149,11 @@ export default function ChatInterface({ availableModels }: Props) {
                           )}
                           {msg.response.translation_warning && (
                             <span className="text-[11px] text-slate-400">Sisaldab mitteametlikku tõlget</span>
+                          )}
+                          {msg.response.unverified_sections.length > 0 && (
+                            <span className="text-[11px] text-amber-600">
+                              ⚠ Kinnitamata viited / Unverified: {msg.response.unverified_sections.map((s) => `§ ${s}`).join(", ")}
+                            </span>
                           )}
                         </div>
                       )}

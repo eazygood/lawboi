@@ -4,6 +4,7 @@ import re
 from datetime import date
 from typing import Optional, Protocol, runtime_checkable
 
+from lawboi.answer.citations import detect_language
 from lawboi.pipeline.context import RetrievalContext
 from lawboi.ports.vector_store import VectorStore
 from lawboi.ports.structured_store import StructuredStore
@@ -56,6 +57,44 @@ class CitationShortCircuit:
             eli=_extract_eli(ctx.query), title_query=_extract_title_query(ctx.query) or None)
         ctx.add_all([_to_provision_dict(r) for r in rows])
         ctx.done = True
+        return ctx
+
+
+_TRANSLATE_PROMPT = (
+    "Translate the following legal question into Estonian. "
+    "Preserve section references (e.g. \"§ 299\") and numbers exactly. "
+    "Reply with ONLY the Estonian translation, nothing else.\n\n"
+    "Input: {query}"
+)
+
+
+class QueryTranslation:
+    """Translates a non-Estonian query into Estonian before retrieval, since
+    the corpus (FTS index and passage embeddings) is Estonian-only and
+    multilingual dense search alone is not reliable enough to rank the
+    correct provision for a non-Estonian query (verified: an English query
+    ranked the correct provision 1462nd out of ~160k candidates). Runs
+    best-effort like StepBackExpand: on timeout or LLM error, leaves
+    ctx.query unchanged rather than failing the request.
+    """
+    def __init__(self, llm: Optional[LLMProvider]):
+        self._llm = llm
+
+    async def __call__(self, ctx: RetrievalContext) -> RetrievalContext:
+        if ctx.done or self._llm is None or detect_language(ctx.query) == "et":
+            return ctx
+        try:
+            raw = await asyncio.wait_for(
+                self._llm.complete(_TRANSLATE_PROMPT.format(query=ctx.query)),
+                timeout=ctx.config.query_translation_timeout_s)
+            translated = raw.strip()
+            if translated:
+                ctx.query = translated
+        except asyncio.TimeoutError:
+            log.warning("Query translation timed out after %.1fs, skipping",
+                        ctx.config.query_translation_timeout_s)
+        except Exception:
+            log.warning("Query translation failed, skipping", exc_info=True)
         return ctx
 
 

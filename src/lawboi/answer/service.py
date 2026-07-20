@@ -4,7 +4,9 @@ from typing import Optional
 from lawboi.ports.llm import LLMProvider
 from lawboi.domain.errors import NoSourcesFoundError, LLMTimeoutError
 from lawboi.answer.prompts import SYSTEM_PROMPT, DISCLAIMER, format_history
-from lawboi.answer.citations import AnswerPayload, format_context, validate_citations, detect_language
+from lawboi.answer.citations import (
+    AnswerPayload, format_context, validate_citations, detect_language, find_unverified_sections,
+)
 
 
 class AnswerService:
@@ -31,12 +33,14 @@ class AnswerService:
             raise LLMTimeoutError(
                 f"Answer generation timed out after {self._timeout_s:.1f}s") from exc
         citations = validate_citations(payload.citations, provisions)
+        unverified_sections = find_unverified_sections(payload.answer, citations)
         translation_warning = any(
             p.get("metadata", {}).get("is_translation", False) for p in provisions)
         return {
             "answer": payload.answer,
             "model_used": self._llm.name,
             "citations": citations,
+            "unverified_sections": unverified_sections,
             "language_detected": detect_language(query),
             "translation_warning": translation_warning,
             "disclaimer": DISCLAIMER,

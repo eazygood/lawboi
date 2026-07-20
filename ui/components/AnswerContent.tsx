@@ -8,22 +8,32 @@ import { annotateInlineCitations } from "@/lib/citations"
 interface Props {
   answer: string
   citations: Citation[]
+  unverifiedSections?: string[]
   onCitationClick: (index: number) => void
 }
 
-export default function AnswerContent({ answer, citations, onCitationClick }: Props) {
-  const annotated = annotateInlineCitations(answer, citations)
+export default function AnswerContent({ answer, citations, unverifiedSections = [], onCitationClick }: Props) {
+  const annotated = annotateInlineCitations(answer, citations, unverifiedSections)
 
   const components: Components = {
     a({ href, children }) {
-      const match = /^#cite-(\d+)$/.exec(href ?? "")
-      if (!match) return <a href={href}>{children}</a>
-      const index = Number(match[1])
-      return (
-        <button type="button" className="cite-marker" onClick={() => onCitationClick(index)}>
-          {children}
-        </button>
-      )
+      const cite = /^#cite-(\d+)$/.exec(href ?? "")
+      if (cite) {
+        const index = Number(cite[1])
+        return (
+          <button type="button" className="cite-marker" onClick={() => onCitationClick(index)}>
+            {children}
+          </button>
+        )
+      }
+      if (/^#unverified-/.test(href ?? "")) {
+        return (
+          <span className="cite-marker-unverified" title="Not found among retrieved/validated sources">
+            {children}
+          </span>
+        )
+      }
+      return <a href={href}>{children}</a>
     },
   }
 

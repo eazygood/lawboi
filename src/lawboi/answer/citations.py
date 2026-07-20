@@ -75,6 +75,16 @@ def validate_citations(citations: list[CitationOut], provisions: list[dict]) -> 
     return result
 
 
+_SECTION_MENTION = re.compile(r"§\s*(\d+[a-z]?)", re.IGNORECASE)
+
+
+def find_unverified_sections(answer: str, citations: list[dict]) -> list[str]:
+    """Section numbers mentioned in the answer text with no matching validated citation."""
+    validated = {_normalize_section(c["section"]).lower() for c in citations}
+    mentioned = {m.group(1).lower() for m in _SECTION_MENTION.finditer(answer)}
+    return sorted(mentioned - validated, key=lambda s: (len(s), s))
+
+
 _ESTONIAN_CHARS = set("äöüõšž")
 
 # Common function words as a fallback signal for Estonian questions that happen to

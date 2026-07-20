@@ -7,10 +7,10 @@ from pydantic import BaseModel
 from lawboi.pipeline.context import RetrievalConfig, RetrievalContext
 from lawboi.pipeline.stages import (
     CitationShortCircuit, DenseSearch, SparseSearch, ParallelSearch, StepBackExpand,
-    Rerank, is_citation_query,
+    QueryTranslation, Rerank, is_citation_query,
 )
 from lawboi.domain.models import Act, ActVersion, Provision
-from tests.lawboi.fakes import InMemoryVectorStore, InMemoryStructuredStore
+from tests.lawboi.fakes import FakeLLMProvider, InMemoryVectorStore, InMemoryStructuredStore
 
 
 Model = TypeVar("Model", bound=BaseModel)
@@ -130,3 +130,33 @@ async def test_step_back_expand_times_out_and_returns_ctx():
     out = await stage(ctx)
     assert out.candidates == []
     assert out.done is False
+
+
+async def test_query_translation_translates_non_estonian_query():
+    llm = FakeLLMProvider(responses=["Üürileandja tõstis üüri."])
+    ctx = RetrievalContext(query="The landlord raised the rent.", as_of=date(2021, 1, 1))
+    out = await QueryTranslation(llm)(ctx)
+    assert out.query == "Üürileandja tõstis üüri."
+
+
+async def test_query_translation_skips_estonian_query():
+    llm = FakeLLMProvider(responses=["should never be returned"])
+    ctx = RetrievalContext(query="Üürileandja tõstis üüri.", as_of=date(2021, 1, 1))
+    out = await QueryTranslation(llm)(ctx)
+    assert out.query == "Üürileandja tõstis üüri."
+    assert llm.calls == []
+
+
+async def test_query_translation_skips_when_done():
+    llm = FakeLLMProvider(responses=["should never be returned"])
+    ctx = RetrievalContext(query="The landlord raised the rent.", as_of=date(2021, 1, 1), done=True)
+    out = await QueryTranslation(llm)(ctx)
+    assert out.query == "The landlord raised the rent."
+    assert llm.calls == []
+
+
+async def test_query_translation_times_out_and_returns_ctx_unchanged():
+    config = RetrievalConfig(query_translation_timeout_s=0.01)
+    ctx = RetrievalContext(query="The landlord raised the rent.", as_of=date(2021, 1, 1), config=config)
+    out = await QueryTranslation(SlowLLM())(ctx)
+    assert out.query == "The landlord raised the rent."

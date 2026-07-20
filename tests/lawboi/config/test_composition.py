@@ -1,6 +1,6 @@
 from lawboi.config.composition import Container, build_pipeline
 from lawboi.pipeline.stages import (
-    CitationShortCircuit, ParallelSearch, StepBackExpand, Rerank,
+    CitationShortCircuit, ParallelSearch, QueryTranslation, StepBackExpand, Rerank,
 )
 from tests.lawboi.fakes import (
     FakeLLMProvider, InMemoryVectorStore, InMemoryStructuredStore,
@@ -17,7 +17,9 @@ def test_build_pipeline_order():
         store=InMemoryStructuredStore(), vector=InMemoryVectorStore(),
         embedder=StubEmbedder(), llm=FakeLLMProvider(), reranker=None)
     types = [type(s) for s in stages]
-    assert types == [CitationShortCircuit, ParallelSearch, StepBackExpand, Rerank]
+    assert types == [
+        CitationShortCircuit, QueryTranslation, ParallelSearch, StepBackExpand, Rerank,
+    ]
 
 
 def test_container_holds_services():
