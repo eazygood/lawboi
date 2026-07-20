@@ -1,6 +1,6 @@
 import pytest
 from lawboi.adapters.llm.registry import REGISTRY, ModelSpec, find_spec
-from lawboi.adapters.llm.factory import available_models, resolve_model
+from lawboi.adapters.llm.factory import available_models, resolve_model, resolve_fast_model
 from lawboi.domain.errors import UnsupportedModelError, NoModelConfiguredError
 
 
@@ -45,3 +45,18 @@ def test_find_spec():
     spec = find_spec("gpt-4o")
     assert spec is not None
     assert spec.provider == "openai"
+
+
+def test_resolve_fast_model_picks_fast_tier(monkeypatch):
+    for var in ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_FAST_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("OPENAI_API_KEY", "x")
+    assert resolve_fast_model(None) == "gemini-2.0-flash"
+
+
+def test_resolve_fast_model_returns_none_when_no_fast_tier_key(monkeypatch):
+    for var in ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_FAST_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    assert resolve_fast_model(None) is None

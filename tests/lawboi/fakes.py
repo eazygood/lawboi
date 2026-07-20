@@ -27,6 +27,27 @@ class FakeLLMProvider:
         return self._structured_response  # type: ignore[return-value]
 
 
+class InMemoryAnswerCache:
+    def __init__(self):
+        self._rows: list[tuple] = []
+        self.find_calls = 0
+        self.store_calls = 0
+
+    async def find(self, embedding, as_of):
+        self.find_calls += 1
+        for emb, row_as_of, payload in self._rows:
+            if row_as_of == as_of and emb == embedding:
+                return payload
+        return None
+
+    async def store(self, embedding, as_of, query_text, cache_key_text, answer_payload):
+        self.store_calls += 1
+        self._rows.append((embedding, as_of, answer_payload))
+
+    async def clear(self):
+        self._rows = []
+
+
 class InMemoryVectorStore:
     def __init__(self):
         self._embeddings: dict[int, list[float]] = {}

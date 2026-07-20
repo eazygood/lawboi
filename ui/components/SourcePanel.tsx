@@ -46,14 +46,19 @@ export default function SourcePanel({ citations, open, activeIndex, onClose }: P
                 activeIndex === i + 1 ? "active" : ""
               }`}
             >
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center mb-1.5">
                 <span className="text-[10px] font-bold text-white bg-[#1e3a5f] rounded px-1.5 py-0.5">
                   {i + 1}
                 </span>
-                <span className="text-[11px] text-slate-400">{c.eli}</span>
               </div>
               <p className="text-sm font-medium text-slate-800">{c.act_title}</p>
-              <p className="text-sm text-slate-600 mt-0.5">{c.section} {c.subsection}</p>
+              {c.heading && (
+                <p className="text-sm text-slate-500 italic">{c.heading}</p>
+              )}
+              <p className="text-sm text-slate-600 mt-0.5">
+                {c.section}
+                {c.subsection && <sup className="ml-0.5">{c.subsection}</sup>}
+              </p>
               <a
                 href={c.url}
                 target="_blank"

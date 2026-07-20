@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from lawboi.domain.errors import (
     NoSourcesFoundError, UnsupportedModelError, NoModelConfiguredError, ContentBlockedError,
+    LLMTimeoutError,
 )
 
 _STATUS = {
@@ -10,6 +11,7 @@ _STATUS = {
     UnsupportedModelError: 400,
     NoModelConfiguredError: 503,
     ContentBlockedError: 400,
+    LLMTimeoutError: 504,
 }
 
 

@@ -24,5 +24,9 @@ class ContentBlockedError(LawboiError):
     """Input failed the content-safety moderation check."""
 
 
+class LLMTimeoutError(LawboiError):
+    """An LLM call exceeded its configured timeout."""
+
+
 class ParseError(LawboiError):
     """Source content could not be parsed into provisions."""

@@ -13,9 +13,14 @@ TAGS = {
     "clause": "punkt",
     "subclause": "alampunkt",
     "part": "jagu",
+    "division": "jaotis",
+    "sub_division": "alljaotis",
     "chapter": "peatykk",
+    "book": "osa",
     "text": "sisuTekst",
     "title": "pealkiri",
+    "section_title": "paragrahvPealkiri",
+    "tervik_id": "terviktekstiGrupiID",
 }
 
 
@@ -53,6 +58,8 @@ def _parse_section(
     results: list[Provision],
 ) -> None:
     section_num = _section_num(el)
+    heading_el = el.find(TAGS["section_title"])
+    heading = heading_el.text.strip() if heading_el is not None and heading_el.text else None
     text_parts = []
     for child in el:
         if child.tag in (TAGS["subsection"], TAGS["text"]):
@@ -73,7 +80,26 @@ def _parse_section(
             text_et=text_et,
             text_en=None,
             parent_id=parent_id,
+            heading=heading,
         ))
+
+
+CONTAINER_TAGS = {TAGS["book"], TAGS["part"], TAGS["chapter"], TAGS["division"], TAGS["sub_division"]}
+
+
+def _walk_sections(
+    el: ET.Element,
+    act_version_id: int,
+    parent_id: Optional[int],
+    results: list[Provision],
+) -> None:
+    for child in el:
+        if child.tag == TAGS["section"]:
+            _parse_section(child, act_version_id, parent_id, results)
+        elif child.tag in CONTAINER_TAGS:
+            _walk_sections(child, act_version_id, parent_id, results)
+        elif not (child.tag.endswith("Nr") or child.tag.endswith("Pealkiri")):
+            print(f"Warning: unrecognized element <{child.tag}> under <{el.tag}> — content may be dropped.")
 
 
 def parse_effective_date(xml_bytes: bytes) -> tuple[Optional[date], Optional[date]]:
@@ -117,22 +143,7 @@ def parse_act_xml(
     if sisu is None:
         sisu = root
 
-    # sisu > jagu > peatykk > paragrahv
-    for part_el in sisu.findall(TAGS["part"]):
-        for chapter_el in part_el.findall(TAGS["chapter"]):
-            for section_el in chapter_el.findall(TAGS["section"]):
-                _parse_section(section_el, act_version_id, None, results)
-        for section_el in part_el.findall(TAGS["section"]):
-            _parse_section(section_el, act_version_id, None, results)
-
-    # sisu > peatykk > paragrahv
-    for chapter_el in sisu.findall(TAGS["chapter"]):
-        for section_el in chapter_el.findall(TAGS["section"]):
-            _parse_section(section_el, act_version_id, None, results)
-
-    # sisu > paragrahv
-    for section_el in sisu.findall(TAGS["section"]):
-        _parse_section(section_el, act_version_id, None, results)
+    _walk_sections(sisu, act_version_id, None, results)
 
     return results
 
@@ -143,20 +154,24 @@ class ParsedAct:
     effective_from: Optional[date]
     effective_to: Optional[date]
     provisions: list[Provision]
+    tervik_id: Optional[int] = None
 
 
 def parse_act(xml_bytes: bytes, act_version_id: int) -> ParsedAct:
     """Parse a raw act XML document in a single pass. Returns title, effective
-    dates, and provisions. Replaces three separate parse calls in the ingest path."""
+    dates, tervik_id, and provisions. Replaces three separate parse calls in
+    the ingest path."""
     root = _parse_xml(xml_bytes)
 
     # title
     title_el = root.find(".//pealkiri")
     title = title_el.text.strip() if title_el is not None and title_el.text else ""
 
-    # effective dates
+    # effective dates + tervik_id (the stable per-act ID, embedded in every
+    # fetched act's own XML -- see terviktekstiGrupiID under metaandmed)
     effective_from: Optional[date] = None
     effective_to: Optional[date] = None
+    tervik_id: Optional[int] = None
     meta = root.find("metaandmed")
     if meta is not None:
         kehtivus = meta.find("kehtivus")
@@ -171,30 +186,22 @@ def parse_act(xml_bytes: bytes, act_version_id: int) -> ParsedAct:
                     return None
             effective_from = _d("kehtivuseAlgus")
             effective_to = _d("kehtivuseLopp")
+        tid_el = meta.find(TAGS["tervik_id"])
+        if tid_el is not None and tid_el.text and tid_el.text.strip().isdigit():
+            tervik_id = int(tid_el.text.strip())
 
-    # provisions — reuse the existing tree walk logic
+    # provisions — reuse the shared recursive walker
     results: list[Provision] = []
     sisu = root.find("sisu")
     if sisu is None:
         sisu = root
 
-    for part_el in sisu.findall(TAGS["part"]):
-        for chapter_el in part_el.findall(TAGS["chapter"]):
-            for section_el in chapter_el.findall(TAGS["section"]):
-                _parse_section(section_el, act_version_id, None, results)
-        for section_el in part_el.findall(TAGS["section"]):
-            _parse_section(section_el, act_version_id, None, results)
-
-    for chapter_el in sisu.findall(TAGS["chapter"]):
-        for section_el in chapter_el.findall(TAGS["section"]):
-            _parse_section(section_el, act_version_id, None, results)
-
-    for section_el in sisu.findall(TAGS["section"]):
-        _parse_section(section_el, act_version_id, None, results)
+    _walk_sections(sisu, act_version_id, None, results)
 
     return ParsedAct(
         title=title,
         effective_from=effective_from,
         effective_to=effective_to,
         provisions=results,
+        tervik_id=tervik_id,
     )

@@ -1,6 +1,11 @@
+import asyncio
+import logging
+
 from pydantic import BaseModel, Field
 
 from lawboi.ports.llm import LLMProvider
+
+log = logging.getLogger(__name__)
 
 _MODERATION_PROMPT = """\
 You are a content-safety classifier for a legal information assistant covering Estonian law.
@@ -22,9 +27,15 @@ class ModerationResult(BaseModel):
 
 
 class ModerationService:
-    def __init__(self, llm: LLMProvider):
+    def __init__(self, llm: LLMProvider, timeout_s: float = 8.0):
         self._llm = llm
+        self._timeout_s = timeout_s
 
     async def check(self, text: str) -> ModerationResult:
         prompt = _MODERATION_PROMPT.format(text=text)
-        return await self._llm.complete_structured(prompt, ModerationResult)
+        try:
+            return await asyncio.wait_for(
+                self._llm.complete_structured(prompt, ModerationResult), timeout=self._timeout_s)
+        except asyncio.TimeoutError:
+            log.warning("Moderation check timed out after %.1fs, failing open", self._timeout_s)
+            return ModerationResult(flagged=False, reason="moderation check timed out")

@@ -21,11 +21,12 @@ class IngestService:
         self._embed_lock = asyncio.Semaphore(1)
 
     async def index_act(self, act: Act, version: ActVersion,
-                        provisions: list[Provision], chunks: list[Chunk]) -> None:
+                        provisions: list[Provision], chunks: list[Chunk],
+                        force: bool = False) -> None:
         act_id = await self._store.upsert_act(act)
         version.act_id = act_id
         version_id = await self._store.upsert_act_version(version)
-        if await self._store.version_fully_indexed(version_id):
+        if not force and await self._store.version_fully_indexed(version_id):
             return
         await self._store.delete_provisions_for_version(version_id)
 

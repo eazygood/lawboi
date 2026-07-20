@@ -8,12 +8,21 @@ class Settings(BaseSettings):
     database_url: str
     cohere_api_key: Optional[str] = None
     llm_model: Optional[str] = None
+    llm_fast_model: Optional[str] = None
     db_pool_min: int = 5
     db_pool_max: int = 50
     cors_origins: list[str] = ["http://localhost:3000"]
     answer_rate_limit: str = "10/minute"
     search_rate_limit: str = "30/minute"
     trusted_proxies: list[str] = []   # e.g. ["10.0.0.0/8"] for internal load balancer
+    answer_max_tokens: int = 1500
+    fast_max_tokens: int = 150
+    answer_timeout_s: float = 20.0
+    moderation_timeout_s: float = 8.0
+    max_provision_chars: int = 2000
+    max_history_chars: int = 500
+    cache_similarity_threshold: float = 0.97
+    cache_retention_days: int = 30
 
 
 def load_settings() -> Settings:

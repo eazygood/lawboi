@@ -12,15 +12,16 @@ class ModelSpec:
     name: str
     provider: str
     api_key_env: str
-    build: Callable[[str, str], LLMProvider]
+    build: Callable[[str, str, Optional[int]], LLMProvider]
     priority: int
+    tier: str = "frontier"
 
 
 REGISTRY: tuple[ModelSpec, ...] = (
-    ModelSpec("gemini-2.0-flash", "google", "GEMINI_API_KEY", GeminiAdapter, 1),
+    ModelSpec("gemini-2.0-flash", "google", "GEMINI_API_KEY", GeminiAdapter, 1, tier="fast"),
     ModelSpec("gemini-1.5-pro", "google", "GEMINI_API_KEY", GeminiAdapter, 1),
     ModelSpec("gpt-4o", "openai", "OPENAI_API_KEY", OpenAIAdapter, 2),
-    ModelSpec("gpt-4o-mini", "openai", "OPENAI_API_KEY", OpenAIAdapter, 2),
+    ModelSpec("gpt-4o-mini", "openai", "OPENAI_API_KEY", OpenAIAdapter, 2, tier="fast"),
     ModelSpec("claude-sonnet-4-5", "anthropic", "ANTHROPIC_API_KEY", AnthropicAdapter, 3),
 )
 

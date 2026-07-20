@@ -118,9 +118,9 @@ python -m lawboi.ingest --all --doc-type seadus  # crawl+ingest only one doc typ
 ```
 
 > `määrus` is a large category (many thousands of regulations), so the first full crawl
-> takes hours and produces a large embedding set. Run it once locally, then ship the
-> validated dataset with `pg_dump`/`pg_restore` (see [Deployment](#deployment)) and let
-> incremental re-runs keep it current.
+> takes hours and produces a large embedding set. Run it once locally, then back it up
+> with `python scripts/corpus_dump.py export` (writes `db/corpus.dump`, gitignored — see
+> [Corpus backup](#corpus-backup)) and let incremental re-runs keep it current.
 
 > `--all` runs `--concurrency` acts through fetch+index at once. Ctrl-C stops handing out
 > new work but lets in-flight acts finish before exiting — safe to interrupt, since
@@ -146,6 +146,26 @@ needed after a parser or embedding change.
 > `psql "$DATABASE_URL" -f db/migrations/002_conversations.sql`.
 
 > **Note:** The RT API endpoint format (`RT_BASE_URL` in `.env`) should be verified against real Riigiteataja responses before running at scale.
+
+### Semantic answer cache
+
+`/answer` checks a semantic cache (`answer_cache` table, pgvector cosine similarity
+≥0.97, scoped to the request's `as_of` date) before calling the LLM — repeated or
+near-duplicate questions skip retrieval and generation entirely. See
+`src/lawboi/adapters/vector/answer_cache.py`.
+
+**The cache is invalidated automatically whenever the corpus changes.** `run_ingest`
+and `run_corpus` (i.e. any `python -m lawboi.ingest ...` call that actually indexes at
+least one act) clear the entire cache on completion, so a citation/data fix or a fresh
+ingest can never keep serving a stale cached answer. Cached rows also expire on their
+own after `cache_retention_days` (default 30).
+
+To invalidate manually — e.g. after a direct DB fix that didn't go through `run_ingest`
+(as happened once while fixing the citation-link bug) — run:
+
+```bash
+python -m lawboi.ingest --clear-cache
+```
 
 ### 4. Try it
 
@@ -195,7 +215,41 @@ docker-compose up -d db
 .venv/bin/python -m pytest --cov=lawboi --cov-report=term-missing
 ```
 
-Integration tests that need a live Postgres are skipped automatically when `DATABASE_URL` is unset.
+Integration tests under `tests/lawboi/adapters/` need a live Postgres and run against an
+isolated test DB, never the dev DB — see [Isolated test DB](#isolated-test-db) below.
+They're skipped automatically when `TEST_DATABASE_URL` is unset.
+
+### Isolated test DB
+
+`tests/lawboi/adapters/` reads `TEST_DATABASE_URL` — a distinct env var from the app's
+`DATABASE_URL` — so it can never write into the dev/manual-testing database. Start the
+dedicated container and point the suite at it:
+
+```bash
+docker-compose -f docker-compose.test.yml up -d db-test
+TEST_DATABASE_URL=postgresql://lawboi:lawboi@localhost:5433/lawboi \
+  .venv/bin/python -m pytest tests/lawboi/adapters/ -v
+```
+
+Each test that touches the DB truncates its tables afterward, so runs are repeatable with
+no manual cleanup. Never set `TEST_DATABASE_URL` to the same value as `DATABASE_URL`.
+
+## Corpus backup
+
+Ingest can take hours for a full crawl, so back up the ingested corpus (`act`,
+`act_version`, `provision`, including embeddings) once you have a good dataset, rather
+than re-ingesting from scratch after a DB reset:
+
+```bash
+python scripts/corpus_dump.py export   # dev db (lawboi-db-1) -> db/corpus.dump
+python scripts/corpus_dump.py import   # db/corpus.dump -> dev db (lawboi-db-1)
+```
+
+`db/corpus.dump` is gitignored — it's a large binary and fully regenerable from Riigi
+Teataja, so it isn't committed. Keep your own copy (local disk, cloud storage, etc.)
+if you want to avoid re-ingesting. `import` warns rather than overwrites if the dev DB
+already has rows — `pg_restore` errors on conflicting primary keys instead of
+duplicating, so restore into a freshly-reset DB (`db/schema.sql` applied, tables empty).
 
 ## Evaluation
 

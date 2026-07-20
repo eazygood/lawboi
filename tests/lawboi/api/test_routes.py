@@ -4,7 +4,9 @@ from datetime import date
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from lawboi.api.main import app
-from lawboi.api.deps import get_retrieval, get_answer, get_store, get_moderation
+from lawboi.api.deps import (
+    get_retrieval, get_answer, get_store, get_moderation, get_embedder, get_cache, get_settings,
+)
 from lawboi.domain.models import Act, ActVersion, Provision
 from lawboi.pipeline.retrieval import RetrievalService
 from lawboi.answer.service import AnswerService
@@ -12,7 +14,7 @@ from lawboi.answer.moderation import ModerationService, ModerationResult
 from lawboi.config.settings import Settings
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from lawboi.answer.citations import AnswerPayload, CitationOut
-from tests.lawboi.fakes import FakeLLMProvider, InMemoryStructuredStore
+from tests.lawboi.fakes import FakeLLMProvider, InMemoryStructuredStore, InMemoryAnswerCache
 
 
 class StubRetrieval(RetrievalService):
@@ -37,7 +39,11 @@ def _clean_moderation():
         FakeLLMProvider(structured_response=ModerationResult(flagged=False, reason="")))
 
 
-def _client(provisions, store=None, moderation=None):
+class StubEmbedder:
+    def embed_query(self, text): return [0.1]
+
+
+def _client(provisions, store=None, moderation=None, cache=None):
     app.dependency_overrides[get_retrieval] = lambda: StubRetrieval(provisions)
     payload = AnswerPayload(
         answer="Under § 97 notice applies.",
@@ -48,6 +54,11 @@ def _client(provisions, store=None, moderation=None):
     app.dependency_overrides[get_store] = lambda: store
     moderation = moderation if moderation is not None else _clean_moderation()
     app.dependency_overrides[get_moderation] = lambda: moderation
+    cache = cache if cache is not None else InMemoryAnswerCache()
+    app.dependency_overrides[get_cache] = lambda: cache
+    app.dependency_overrides[get_embedder] = lambda: StubEmbedder()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        database_url="postgresql://x", max_history_chars=500)
     return TestClient(app)
 
 
@@ -65,6 +76,7 @@ def test_answer_returns_200_with_sources():
     r = _client([_prov()]).post("/answer", json={"query": "notice period?"})
     assert r.status_code == 200
     assert r.json()["citations"][0]["section"] == "§ 97"
+    assert r.json()["citations"][0]["heading"] == ""
     assert isinstance(r.json()["conversation_id"], int)
 
 
@@ -179,3 +191,36 @@ def test_proxy_headers_middleware_not_registered_when_trusted_proxies_empty():
         test_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies)
     middleware_classes = [m.cls for m in test_app.user_middleware]
     assert ProxyHeadersMiddleware not in middleware_classes
+
+
+def test_answer_cache_miss_stores_result():
+    cache = InMemoryAnswerCache()
+    r = _client([_prov()], cache=cache).post("/answer", json={"query": "notice period?"})
+    assert r.status_code == 200
+    assert cache.find_calls == 1
+    assert cache.store_calls == 1
+
+
+def test_answer_cache_hit_skips_retrieval_and_llm():
+    cache = InMemoryAnswerCache()
+    client = _client([_prov()], cache=cache)
+    first = client.post("/answer", json={"query": "notice period?"})
+
+    # Same query, no history yet on the first call, so a fresh conversation with
+    # no prior turns produces the same cache key text -> should hit.
+    second = client.post("/answer", json={"query": "notice period?"})
+    assert second.status_code == 200
+    assert second.json()["answer"] == first.json()["answer"]
+    assert cache.store_calls == 1  # only the first (miss) call stored anything
+
+
+def test_answer_flagged_output_is_not_cached():
+    cache = InMemoryAnswerCache()
+    moderation = ToggleModeration([
+        ModerationResult(flagged=False, reason=""),
+        ModerationResult(flagged=True, reason="unsafe answer"),
+    ])
+    r = _client([_prov()], moderation=moderation, cache=cache).post(
+        "/answer", json={"query": "notice period?"})
+    assert r.status_code == 200
+    assert cache.store_calls == 0

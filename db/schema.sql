@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS provision (
     text_et        TEXT NOT NULL,
     text_en        TEXT,
     parent_id      INTEGER,
+    heading        TEXT,
     embedding      vector(1024)
 );
 
@@ -53,3 +54,18 @@ CREATE TABLE IF NOT EXISTS message (
 );
 
 CREATE INDEX IF NOT EXISTS message_conversation_id_idx ON message (conversation_id);
+
+CREATE TABLE IF NOT EXISTS answer_cache (
+    id               SERIAL PRIMARY KEY,
+    as_of            DATE NOT NULL,
+    query_text       TEXT NOT NULL,
+    cache_key_text   TEXT NOT NULL,
+    cache_embedding  vector(1024) NOT NULL,
+    answer_payload   JSONB NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS answer_cache_embedding_hnsw ON answer_cache
+    USING hnsw (cache_embedding vector_cosine_ops);
+
+CREATE INDEX IF NOT EXISTS answer_cache_as_of_idx ON answer_cache (as_of);

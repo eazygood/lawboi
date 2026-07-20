@@ -5,6 +5,7 @@ def chunk_provisions(
     provisions: list[Provision],
     act_title: str,
     eli: str,
+    source_global_id: int,
 ) -> list[Chunk]:
     """Create one Chunk per provision, with ±1 neighbour as context."""
     chunks = []
@@ -25,6 +26,7 @@ def chunk_provisions(
             metadata={
                 "act_title": act_title,
                 "eli": eli,
+                "source_global_id": source_global_id,
                 "section_num": provision.section_num,
                 "level": provision.level,
                 "act_version_id": provision.act_version_id,

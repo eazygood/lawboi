@@ -31,3 +31,15 @@ async def get_store():
 
 async def get_moderation():
     return (await get_container()).moderation
+
+
+async def get_embedder():
+    return (await get_container()).embedder
+
+
+async def get_cache():
+    return (await get_container()).cache
+
+
+async def get_settings():
+    return (await get_container()).settings

@@ -50,53 +50,66 @@ def _is_better(candidate: ActMeta, incumbent: ActMeta, on: date) -> bool:
     return (candidate.effective_from or date.min) > (incumbent.effective_from or date.min)
 
 
-async def run_ingest(query: str) -> None:
+async def run_ingest(query: str, force: bool = False) -> None:
+    """Ingest one act by numeric globaalID or by free-text/title search.
+    `Act.eli` is always the stable terviktekstID, never a per-version
+    globaalID -- using a globaalID as eli would create a second, duplicate
+    `act` row the next time this act is re-ingested under a different
+    redaktsioon's globaalID. The numeric path recovers the terviktekstID from
+    the fetched XML itself (`terviktekstiGrupiID`, see parser.parse_act);
+    the search path gets it from RT's search results (`ActMeta.tervik_id`)
+    and collapses to one current version per act, exactly like run_corpus."""
     container = await build_container(Settings(database_url=os.getenv("DATABASE_URL", "")))
     source = RiigiTeatajaSource()
+    today = date.today()
 
     if query.isdigit():
         gid = int(query)
-        ids = [gid]
-        titles = {gid: str(gid)}
-        froms, tos = {gid: None}, {gid: None}
+        print(f"  Fetching globaalID={gid}...")
+        try:
+            raw = source.fetch(gid)
+        except SourceFetchError as e:
+            print(f"    Fetch failed for {gid}: {e} — skipping.")
+            return
+        source_hash = compute_hash(raw.xml)
+        parsed = parse_act(raw.xml, act_version_id=0)
+        if not parsed.provisions:
+            print(f"    No provisions parsed for {gid} — skipping.")
+            return
+        title_xml = parsed.title or str(gid)
+        eff_from = parsed.effective_from or today
+        eff_to = parsed.effective_to
+        eli = str(parsed.tervik_id) if parsed.tervik_id else str(gid)
+        act = Act(None, eli, title_xml, None, "general", "seadus")
+        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
+                             source_global_id=gid)
+        chunks = chunk_provisions(parsed.provisions, act_title=title_xml, eli=eli,
+                                  source_global_id=gid)
+        await container.ingest.index_act(act, version, parsed.provisions, chunks, force=force)
+        print(f"    Indexed {title_xml}: {len(parsed.provisions)} provisions.")
+        indexed = 1
     else:
         print(f"Searching for '{query}'...")
         acts = source.search(query, limit=500)
         if not acts:
             print("No acts found.")
             return
-        print(f"Found {len(acts)} version(s). Indexing all...")
-        ids = [a.global_id for a in acts]
-        titles = {a.global_id: a.title for a in acts}
-        froms = {a.global_id: a.effective_from for a in acts}
-        tos = {a.global_id: a.effective_to for a in acts}
+        current = select_current_versions(acts, today)
+        print(f"Found {len(acts)} version(s), {len(current)} distinct act(s). "
+              f"Indexing current text of each...")
+        indexed = 0
+        for tid, m in sorted(current.items()):
+            msg = await _ingest_one(container, source, tid, m, today, force=force)
+            print(f"  {msg}")
+            if msg.endswith("provisions."):
+                indexed += 1
 
-    for gid in ids:
-        print(f"  Fetching globaalID={gid} ({titles[gid]})...")
-        try:
-            raw = source.fetch(gid)
-        except SourceFetchError as e:
-            print(f"    Fetch failed for {gid}: {e} — skipping.")
-            continue
-        source_hash = compute_hash(raw.xml)
-        parsed = parse_act(raw.xml, act_version_id=0)
-        title_xml = parsed.title or titles[gid]
-        eff_from = parsed.effective_from or froms.get(gid) or date.today()
-        eff_to = parsed.effective_to or tos.get(gid)
-        eli = str(gid)
-
-        if not parsed.provisions:
-            print(f"    No provisions parsed for {gid} — skipping.")
-            continue
-        act = Act(None, eli, title_xml, None, "general", "seadus")
-        version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
-                             source_global_id=gid)
-        chunks = chunk_provisions(parsed.provisions, act_title=title_xml, eli=eli)
-        await container.ingest.index_act(act, version, parsed.provisions, chunks)
-        print(f"    Indexed {len(parsed.provisions)} provisions.")
+    if indexed and container.cache is not None:
+        await container.cache.clear()
+        print("Cleared answer cache (corpus changed).")
 
 
-async def _ingest_one(container, source, tid: int, m, today: date) -> str:
+async def _ingest_one(container, source, tid: int, m, today: date, force: bool = False) -> str:
     """Fetch, parse, chunk, and index one act. Returns a human-readable status
     message; does not print — callers own their own progress-line formatting."""
     eli = str(tid)
@@ -115,8 +128,9 @@ async def _ingest_one(container, source, tid: int, m, today: date) -> str:
     act = Act(None, eli, title, None, "general", m.liik or "seadus")
     version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
                          source_global_id=m.global_id)
-    chunks = chunk_provisions(parsed.provisions, act_title=title, eli=eli)
-    await container.ingest.index_act(act, version, parsed.provisions, chunks)
+    chunks = chunk_provisions(parsed.provisions, act_title=title, eli=eli,
+                              source_global_id=m.global_id)
+    await container.ingest.index_act(act, version, parsed.provisions, chunks, force=force)
     return f"{title}: {len(parsed.provisions)} provisions."
 
 
@@ -183,18 +197,35 @@ async def run_corpus(doc_types=CORPUS_DOC_TYPES, force: bool = False,
     finally:
         loop.remove_signal_handler(signal.SIGINT)
 
+    if done and container.cache is not None:
+        await container.cache.clear()
+        print("Cleared answer cache (corpus changed).")
+
     if shutdown.is_set():
         print(f"Interrupted — {done} ingested this run, {remaining} remaining queued for next run.")
     else:
         print(f"Done. Ingested {done}, skipped {skipped} unchanged.")
 
 
+async def run_clear_cache() -> None:
+    """Manually invalidate the semantic answer cache, e.g. after a manual DB
+    fix or backfill that run_ingest/run_corpus didn't perform themselves."""
+    container = await build_container(Settings(database_url=os.getenv("DATABASE_URL", "")))
+    if container.cache is None:
+        print("No answer cache configured — nothing to clear.")
+        return
+    await container.cache.clear()
+    print("Cleared answer cache.")
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     if not args:
-        print("Usage: python -m lawboi.ingest <query|globaalID> | --all [--force] [--concurrency N] [--doc-type seadus|määrus]")
+        print("Usage: python -m lawboi.ingest <query|globaalID> [--force] | --all [--force] [--concurrency N] [--doc-type seadus|määrus] | --clear-cache")
         sys.exit(1)
-    if args[0] == "--all":
+    if args[0] == "--clear-cache":
+        asyncio.run(run_clear_cache())
+    elif args[0] == "--all":
         concurrency = 5
         if "--concurrency" in args[1:]:
             concurrency = int(args[args.index("--concurrency") + 1])
@@ -207,4 +238,4 @@ if __name__ == "__main__":
             doc_types = (doc_type,)
         asyncio.run(run_corpus(doc_types=doc_types, force="--force" in args[1:], concurrency=concurrency))
     else:
-        asyncio.run(run_ingest(args[0]))
+        asyncio.run(run_ingest(args[0], force="--force" in args[1:]))

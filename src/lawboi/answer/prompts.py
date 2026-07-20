@@ -1,10 +1,17 @@
 from typing import Optional
 
 
-def format_history(history: Optional[list[dict]]) -> str:
+def format_history(history: Optional[list[dict]], max_chars: Optional[int] = None) -> str:
     if not history:
         return ""
-    lines = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in history)
+
+    def _line(m: dict) -> str:
+        content = m["content"]
+        if max_chars is not None and len(content) > max_chars:
+            content = content[:max_chars] + " […truncated]"
+        return f"{m['role'].upper()}: {content}"
+
+    lines = "\n".join(_line(m) for m in history)
     return f"CONVERSATION HISTORY:\n{lines}\n\n"
 
 
