@@ -81,3 +81,23 @@ async def test_answer_times_out():
     svc = AnswerService(SlowLLM(), timeout_s=0.01)
     with pytest.raises(LLMTimeoutError):
         await svc.answer("q", provisions=[_prov()])
+
+
+async def test_unverified_sections_flagged_in_result():
+    payload = AnswerPayload(
+        answer="Under § 5 something applies.",
+        citations=[CitationOut(section="5", act_title="Nonexistent Act")])
+    llm = FakeLLMProvider(structured_response=payload)
+    svc = AnswerService(llm)
+    result = await svc.answer("q", provisions=[_prov()])
+    assert result["unverified_sections"] == ["5"]
+
+
+async def test_no_unverified_sections_when_answer_matches_citations():
+    payload = AnswerPayload(
+        answer="Under § 97 notice applies.",
+        citations=[CitationOut(section="97", act_title="TLS")])
+    llm = FakeLLMProvider(structured_response=payload)
+    svc = AnswerService(llm)
+    result = await svc.answer("notice period?", provisions=[_prov()])
+    assert result["unverified_sections"] == []

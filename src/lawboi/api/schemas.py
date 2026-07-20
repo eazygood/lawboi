@@ -22,6 +22,7 @@ class AnswerResponse(BaseModel):
     answer: str
     model_used: str
     citations: list[Citation]
+    unverified_sections: list[str] = Field(default_factory=list)
     language_detected: str
     translation_warning: bool
     disclaimer: str

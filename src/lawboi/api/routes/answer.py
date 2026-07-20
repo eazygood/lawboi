@@ -54,6 +54,8 @@ async def answer(request: Request, req: AnswerRequest, retrieval=Depends(get_ret
         if output_check.flagged:
             log.warning("Output blocked by moderation: %s", output_check.reason)
             result["answer"] = _REFUSAL_MESSAGE
+            result["citations"] = []
+            result["unverified_sections"] = []
         else:
             await cache.store(embedding, as_of, req.query, cache_key_text, result)
 

@@ -4,6 +4,7 @@ from datetime import date
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from lawboi.api.main import app
+from lawboi.api.limiter import limiter
 from lawboi.api.deps import (
     get_retrieval, get_answer, get_store, get_moderation, get_embedder, get_cache, get_settings,
 )
@@ -64,6 +65,11 @@ def _client(provisions, store=None, moderation=None, cache=None):
 
 def teardown_function():
     app.dependency_overrides.clear()
+    # The rate limiter's in-memory storage is keyed by remote address, which
+    # TestClient always reports as the same value -- without a reset, /answer
+    # call counts accumulate across tests and any new test hitting /answer can
+    # push a later, unrelated test over the 10/minute limit.
+    limiter.reset()
 
 
 def _prov():
@@ -78,6 +84,13 @@ def test_answer_returns_200_with_sources():
     assert r.json()["citations"][0]["section"] == "§ 97"
     assert r.json()["citations"][0]["heading"] == ""
     assert isinstance(r.json()["conversation_id"], int)
+
+
+def test_answer_response_includes_unverified_sections():
+    r = _client([_prov()]).post("/answer", json={"query": "notice period?"})
+    assert r.status_code == 200
+    assert "unverified_sections" in r.json()
+    assert isinstance(r.json()["unverified_sections"], list)
 
 
 def test_answer_returns_422_without_sources():
@@ -116,9 +129,12 @@ def test_answer_output_moderation_replaces_answer():
     r = _client([_prov()], moderation=moderation).post(
         "/answer", json={"query": "notice period?"})
     assert r.status_code == 200
-    assert r.json()["answer"] == (
+    body = r.json()
+    assert body["answer"] == (
         "I can't provide that response. Please rephrase your question about Estonian law."
     )
+    assert body["citations"] == []
+    assert body["unverified_sections"] == []
 
 
 def test_search_returns_provision_results():

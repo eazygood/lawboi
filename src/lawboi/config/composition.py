@@ -5,7 +5,7 @@ from lawboi.config.settings import Settings
 from lawboi.pipeline.retrieval import RetrievalService
 from lawboi.pipeline.stages import (
     CitationShortCircuit, DenseSearch, SparseSearch, ProceduralAugment,
-    ParallelSearch, StepBackExpand, Rerank,
+    ParallelSearch, QueryTranslation, StepBackExpand, Rerank,
 )
 from lawboi.answer.service import AnswerService
 from lawboi.answer.moderation import ModerationService
@@ -32,6 +32,7 @@ class Container:
 def build_pipeline(store, vector, embedder, llm, reranker, llm_fast=None):
     return [
         CitationShortCircuit(store),
+        QueryTranslation(llm_fast or llm),
         ParallelSearch([
             DenseSearch(vector, embedder),
             SparseSearch(store),

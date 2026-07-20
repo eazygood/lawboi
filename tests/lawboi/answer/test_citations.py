@@ -1,4 +1,4 @@
-from lawboi.answer.citations import CitationOut, detect_language, format_context, validate_citations
+from lawboi.answer.citations import CitationOut, detect_language, find_unverified_sections, format_context, validate_citations
 
 
 def _prov(section, eli, title, source_global_id=331584, heading=""):
@@ -57,3 +57,27 @@ def test_validate_citations_defaults_heading_to_empty():
     provs = [_prov("97", "RT I 2009, 5, 35", "TLS")]  # heading defaults to ""
     cites = validate_citations([CitationOut(section="97", act_title="TLS")], provs)
     assert cites[0]["heading"] == ""
+
+
+def test_find_unverified_sections_flags_unmatched_mention():
+    answer = "Üürileandja peab järgima § 299 nõudeid."
+    citations = []
+    assert find_unverified_sections(answer, citations) == ["299"]
+
+
+def test_find_unverified_sections_ignores_matched_mention():
+    answer = "Etteteatamistähtaeg on toodud § 97 all."
+    citations = [{"section": "§ 97"}]
+    assert find_unverified_sections(answer, citations) == []
+
+
+def test_find_unverified_sections_catches_bracketed_mention_too():
+    answer = "See on kooskõlas [Võlaõigusseadus § 303]."
+    citations = []
+    assert find_unverified_sections(answer, citations) == ["303"]
+
+
+def test_find_unverified_sections_dedupes_and_sorts():
+    answer = "Vt § 303 ja uuesti § 303, samuti § 97."
+    citations = [{"section": "§ 97"}]
+    assert find_unverified_sections(answer, citations) == ["303"]

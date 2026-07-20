@@ -42,6 +42,15 @@ body {
 }
 .cite-marker:hover { background: #1e3a5f; color: #ffffff; }
 
+/* Inline marker for a `§ N` mention with no matching validated citation */
+.cite-marker-unverified {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 0.3rem; font-size: 0.65rem; font-weight: 600; border-radius: 0.25rem;
+  background: #fef3c7; color: #b45309; margin: 0 1px;
+  cursor: help; vertical-align: text-top; line-height: 1.1rem;
+  border: 1px dashed #d97706;
+}
+
 /* Citations panel: bottom sheet on mobile, static side column on desktop (>=1024px) */
 .citations-panel {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;

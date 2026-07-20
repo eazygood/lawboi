@@ -16,6 +16,7 @@ export interface AnswerResponse {
   answer: string
   model_used: string
   citations: Citation[]
+  unverified_sections: string[]
   language_detected: string
   translation_warning: boolean
   disclaimer: string
