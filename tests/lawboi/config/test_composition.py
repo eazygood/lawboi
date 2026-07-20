@@ -28,5 +28,9 @@ def test_container_holds_services():
         retrieval=RetrievalService([], default_limit=5),
         answer=AnswerService(FakeLLMProvider()),
         ingest=IngestService(InMemoryStructuredStore(), InMemoryVectorStore(), StubEmbedder()),
+        embedder=StubEmbedder(),
+        cache=None,
+        settings=None,
     )
     assert c.retrieval and c.answer and c.ingest
+    assert c.embedder is not None

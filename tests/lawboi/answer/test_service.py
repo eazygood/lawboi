@@ -1,8 +1,22 @@
+import asyncio
+
 import pytest
 from lawboi.answer.service import AnswerService
 from lawboi.answer.citations import AnswerPayload, CitationOut
-from lawboi.domain.errors import NoSourcesFoundError
+from lawboi.domain.errors import NoSourcesFoundError, LLMTimeoutError
 from tests.lawboi.fakes import FakeLLMProvider
+
+
+class SlowLLM:
+    name = "slow"
+
+    async def complete(self, prompt: str) -> str:
+        await asyncio.sleep(10)
+        return "never"
+
+    async def complete_structured(self, prompt: str, output_cls):
+        await asyncio.sleep(10)
+        return None
 
 
 def _prov(section="97", eli="RT I 2009, 5, 35", title="TLS", is_translation=False):
@@ -61,3 +75,9 @@ async def test_translation_warning_flag():
     svc = AnswerService(llm)
     result = await svc.answer("q", provisions=[_prov(is_translation=True)])
     assert result["translation_warning"] is True
+
+
+async def test_answer_times_out():
+    svc = AnswerService(SlowLLM(), timeout_s=0.01)
+    with pytest.raises(LLMTimeoutError):
+        await svc.answer("q", provisions=[_prov()])

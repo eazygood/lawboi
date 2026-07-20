@@ -1,5 +1,6 @@
 import re
 from collections import defaultdict
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,13 +18,15 @@ class AnswerPayload(BaseModel):
         description="Every provision actually relied on to answer the question.")
 
 
-def format_context(provisions: list[dict]) -> str:
+def format_context(provisions: list[dict], max_chars: Optional[int] = None) -> str:
     parts = []
     for p in provisions:
         section = p.get("section_num", "")
         act_title = p.get("metadata", {}).get("act_title", "")
         eli = p.get("metadata", {}).get("eli", "")
         text = p.get("text", "")
+        if max_chars is not None and len(text) > max_chars:
+            text = text[:max_chars] + " […truncated]"
         parts.append(f"[§ {section} | {act_title} | {eli}]\n{text}")
     return "\n\n---\n\n".join(parts)
 
@@ -57,14 +60,16 @@ def validate_citations(citations: list[CitationOut], provisions: list[dict]) -> 
         if key in seen:
             continue
         seen.add(key)
+        source_global_id = meta.get("source_global_id")
         result.append({
             "act_title": meta.get("act_title", ""),
             "section": f"§ {section}",
             "subsection": c.subsection or meta.get("subsection", ""),
             "eli": eli_raw,
+            "heading": meta.get("heading", ""),
             "url": (
-                f"https://www.riigiteataja.ee/akt/"
-                f"{eli_raw.replace(' ', '_').replace(',', '')}"
+                f"https://www.riigiteataja.ee/akt/{source_global_id}"
+                if source_global_id else ""
             ),
         })
     return result

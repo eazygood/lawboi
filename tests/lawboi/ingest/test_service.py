@@ -65,6 +65,24 @@ async def test_new_version_closes_prior_open_version():
     assert versions[200].effective_to is None
 
 
+async def test_index_act_force_reinserts_when_fully_indexed():
+    store, vector = InMemoryStructuredStore(), InMemoryVectorStore()
+    svc = IngestService(store, vector, StubEmbedder())
+    act = Act(None, "RT I 2009, 5, 35", "TLS", None, "general", "seadus")
+    version = ActVersion(None, 0, date(2020, 1, 1), None, "u", "h")
+    p_old = [Provision(None, 0, "1", "section", "old text", None, None)]
+    c_old = [Chunk(None, 0, "1", "old text", {})]
+    await svc.index_act(act, version, p_old, c_old)
+
+    p_new = [Provision(None, 0, "1", "section", "new text", None, None, heading="Katseaeg")]
+    c_new = [Chunk(None, 0, "1", "new text", {})]
+    await svc.index_act(act, version, p_new, c_new, force=True)
+
+    results = await store.fts_search("new", date(2021, 1, 1))
+    assert len(results) == 1
+    assert not await store.fts_search("old", date(2021, 1, 1))
+
+
 async def test_index_act_uses_batch_embedding():
     """IngestService must call embed_passages (batch) not embed_passage (single)."""
     store, vector = InMemoryStructuredStore(), InMemoryVectorStore()

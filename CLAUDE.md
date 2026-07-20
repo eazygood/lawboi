@@ -8,6 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Start infrastructure (required for tests and local dev)
 docker-compose up -d db
 
+# Start the isolated test DB (for tests/lawboi/adapters/ only — never point
+# this suite at the dev db/lawboi-db-1 container)
+docker-compose -f docker-compose.test.yml up -d db-test
+
+# Run the live-Postgres integration suite against the isolated test DB
+TEST_DATABASE_URL=postgresql://lawboi:lawboi@localhost:5433/lawboi \
+  .venv/bin/python -m pytest tests/lawboi/adapters/ -v
+
 # Run all tests (107 tests, no live LLM or RT API calls)
 .venv/bin/python -m pytest
 
@@ -28,6 +36,18 @@ python eval/run_eval.py --api http://localhost:8000
 
 # Frontend
 cd ui && nvm use && npm install && npm run dev
+
+# Export the ingested corpus (act/act_version/provision incl. embeddings) to
+# db/corpus.dump, so you don't have to re-run ingest after a DB reset.
+# db/corpus.dump is gitignored (regenerable, large binary) -- back it up yourself.
+python scripts/corpus_dump.py export
+
+# Restore it into a fresh DB (after db/schema.sql has been applied)
+python scripts/corpus_dump.py import
+
+# Manually invalidate the semantic answer cache (run_ingest/run_corpus already do
+# this automatically on completion -- only needed after a DB fix that bypassed them)
+python -m lawboi.ingest --clear-cache
 ```
 
 Use `.venv/bin/python` explicitly — the project uses Python 3.12+ in a venv.
@@ -38,7 +58,7 @@ The package lives under `src/lawboi/` (src layout). After installing requirement
 
 Hexagonal-lite: `domain → ports → adapters → application services → interface (API/CLI)`.
 
-```
+```text
 src/lawboi/
   domain/         models.py  errors.py  dto.py
   ports/          llm.py  vector_store.py  structured_store.py  law_source.py
@@ -82,6 +102,8 @@ Single PostgreSQL database (using the `pgvector/pgvector:pg16` image), two logic
 
 **DB access is fully async, via psycopg3 — including ingest.** `adapters/structured/pool.py:make_pool()` returns a `psycopg_pool.AsyncConnectionPool[AsyncConnection]`; every `StructuredStore`/`VectorStore` port method, both online and in the offline ingest path, is `async def`. There is no separate sync path for ingest.
 
+**The semantic answer cache is invalidated by ingest, not by time alone.** `PostgresAnswerCache` (`adapters/vector/answer_cache.py`) backs `/answer`'s pre-LLM cache check (cosine similarity ≥0.97, scoped to `as_of`) and also expires rows after `Settings.cache_retention_days` (default 30) — but that alone left a real bug: a fixed citation or a fresh ingest could keep serving a stale cached `answer_payload` for up to 30 days. `run_ingest`/`run_corpus` (`ingest/__main__.py`) now call `container.cache.clear()` whenever at least one act was actually indexed, so the cache can never outlive the data it was computed from. Any code path that writes to `act`/`act_version`/`provision` outside of those two functions (e.g. a manual DB fix) must call `python -m lawboi.ingest --clear-cache` (`run_clear_cache()`) afterward — there's no other invalidation trigger.
+
 **Corpus ingest (`--all`) is concurrency-bounded and interrupt-safe.** `ingest/__main__.py:run_corpus()` drains a work queue through `--concurrency` workers (default 5) via `asyncio.gather`. Ctrl-C (`SIGINT`) sets a `shutdown` event that stops workers from pulling new items but lets in-flight fetch+index calls finish — safe to interrupt, since the next run's `ingested_global_ids()` skip-set picks up wherever it left off.
 
 **Parser strips XML namespaces.** `src/lawboi/adapters/source/parser.py:_parse_xml()` uses `iterparse` to strip all `{namespace}` prefixes before matching. `TAGS` uses bare local names (`paragrahv`, `loige`, etc.). Section numbers are read from the `nr` attribute. The actual RT API namespace is unverified — the `TAGS` dict may need updating after testing against real XML.
@@ -89,3 +111,5 @@ Single PostgreSQL database (using the `pgvector/pgvector:pg16` image), two logic
 **`fetch_act_xml` accepts a string ELI** (e.g. `"RT I 2009, 5, 35"`) and converts it to a slug for the `/api/seadus/RT_I_2009_5_35` endpoint. The ingest CLI passes numeric globaalID as a string — this path is untested against the real API.
 
 **LLM model selection** in `src/lawboi/adapters/llm/factory.py`: auto-selects by priority (Gemini → OpenAI → Anthropic), or pinned via `LLM_MODEL` env var. **Adding a model = one `ModelSpec` tuple in `src/lawboi/adapters/llm/registry.py:REGISTRY`** — no other files need updating.
+
+**`tests/lawboi/adapters/` runs against an isolated test DB, never the dev DB.** `tests/lawboi/adapters/conftest.py` reads `TEST_DATABASE_URL` — a distinct env var from the app's `DATABASE_URL` — and provides a shared `pool` fixture; its teardown truncates every table after each test that requests it, so only tests exercising the live DB pay this cost. Start the isolated container with `docker-compose -f docker-compose.test.yml up -d db-test` (port 5433, separate volume from the dev `db` service) and point `TEST_DATABASE_URL` at it — see the command block above. Never set `TEST_DATABASE_URL` to the same value as `DATABASE_URL`; doing so defeats the isolation this suite depends on. If you need to restore real corpus data into the dev DB after any reset, use the `pg_dump`/`pg_restore` commands above.

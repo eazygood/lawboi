@@ -14,6 +14,7 @@ class Citation(BaseModel):
     section: str
     subsection: str
     eli: str
+    heading: str = ""
     url: str
 
 

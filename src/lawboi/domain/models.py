@@ -33,6 +33,7 @@ class Provision:
     text_et: str
     text_en: Optional[str] = None
     parent_id: Optional[int] = None
+    heading: Optional[str] = None
 
 
 @dataclass

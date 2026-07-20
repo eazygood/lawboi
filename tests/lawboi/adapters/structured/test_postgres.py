@@ -1,23 +1,22 @@
-import os
 from datetime import date
 import pytest
-from lawboi.adapters.structured.pool import make_pool
 from lawboi.adapters.structured.postgres import PostgresStore
 from lawboi.adapters.vector.pgvector import PostgresVectorStore
 from lawboi.domain.models import Act, ActVersion, Provision
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("DATABASE_URL"), reason="requires live Postgres")
+from tests.lawboi.adapters.conftest import requires_live_postgres
+
+pytestmark = requires_live_postgres
 
 
 @pytest.fixture
-async def store():
-    return PostgresStore(await make_pool(min_size=1, max_size=2))
+def store(pool):
+    return PostgresStore(pool)
 
 
 @pytest.fixture
-async def vector():
-    return PostgresVectorStore(await make_pool(min_size=1, max_size=2))
+def vector(pool):
+    return PostgresVectorStore(pool)
 
 
 async def test_write_then_fts_search(store):

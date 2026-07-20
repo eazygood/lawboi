@@ -25,7 +25,7 @@ class PostgresVectorStore:
             await cur.execute(
                 """
                 SELECT p.id, p.section_num, p.text_et, a.title_et, a.eli,
-                       p.act_version_id
+                       p.act_version_id, av.source_global_id, p.heading
                 FROM provision p
                 JOIN act_version av ON p.act_version_id = av.id
                 JOIN act a ON av.act_id = a.id
@@ -43,7 +43,7 @@ class PostgresVectorStore:
                     provision_id=r[0],
                     section_num=r[1],
                     text=r[2],
-                    metadata=build_provision_metadata(r[3], r[4], r[1], r[5]),
+                    metadata=build_provision_metadata(r[3], r[4], r[1], r[5], r[6], r[7]),
                 )
                 for r in rows
             ]

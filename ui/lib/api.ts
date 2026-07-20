@@ -8,6 +8,7 @@ export interface Citation {
   section: string
   subsection: string
   eli: string
+  heading: string
   url: string
 }
 

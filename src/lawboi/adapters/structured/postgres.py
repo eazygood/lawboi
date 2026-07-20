@@ -72,8 +72,8 @@ class PostgresStore:
         async with pooled_cursor(self._pool) as cur:
             await cur.execute(
                 """
-                INSERT INTO provision (act_version_id, section_num, level, text_et, text_en, parent_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO provision (act_version_id, section_num, level, text_et, text_en, parent_id, heading)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """,
                 (
@@ -83,6 +83,7 @@ class PostgresStore:
                     provision.text_et,
                     provision.text_en,
                     provision.parent_id,
+                    provision.heading,
                 ),
             )
             row = await cur.fetchone()
@@ -186,7 +187,7 @@ class PostgresStore:
             await cur.execute(
                 """
                 SELECT p.id, p.section_num, p.text_et, p.act_version_id,
-                       a.title_et, a.eli,
+                       a.title_et, a.eli, av.source_global_id, p.heading,
                        ts_rank(to_tsvector('simple', p.text_et),
                                plainto_tsquery('simple', %s)) AS rank
                 FROM provision p
@@ -207,7 +208,7 @@ class PostgresStore:
                     provision_id=r[0],
                     section_num=r[1],
                     text=r[2],
-                    metadata=build_provision_metadata(r[4], r[5], r[1], r[3]),
+                    metadata=build_provision_metadata(r[4], r[5], r[1], r[3], r[6], r[7]),
                 )
                 for r in rows
             ]
@@ -240,7 +241,7 @@ class PostgresStore:
                            eli: Optional[str], title_query: Optional[str]) -> list[RetrievedProvision]:
         base_sql = """
             SELECT p.id, p.section_num, p.text_et, p.act_version_id,
-                   a.title_et, a.eli
+                   a.title_et, a.eli, av.source_global_id, p.heading
             FROM provision p
             JOIN act_version av ON p.act_version_id = av.id
             JOIN act a ON av.act_id = a.id
@@ -279,7 +280,7 @@ class PostgresStore:
                     provision_id=r[0],
                     section_num=r[1],
                     text=r[2],
-                    metadata=build_provision_metadata(r[4], r[5], r[1], r[3]),
+                    metadata=build_provision_metadata(r[4], r[5], r[1], r[3], r[6], r[7]),
                 )
                 for r in rows
             ]

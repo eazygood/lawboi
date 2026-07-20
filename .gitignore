@@ -13,3 +13,5 @@ ui/.npmrc
 .superpowers/
 docs/superpowers/
 
+db/corpus.dump
+
