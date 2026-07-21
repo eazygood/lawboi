@@ -76,10 +76,15 @@ async def run_ingest(query: str, force: bool = False) -> None:
         if not parsed.provisions:
             print(f"    No provisions parsed for {gid} — skipping.")
             return
+        if parsed.tervik_id is None:
+            print(f"    No terviktekstiGrupiID found for {gid} — skipping to avoid "
+                  f"indexing under a per-version globaalID as eli (would create a "
+                  f"duplicate act row on next re-ingest).")
+            return
         title_xml = parsed.title or str(gid)
         eff_from = parsed.effective_from or today
         eff_to = parsed.effective_to
-        eli = str(parsed.tervik_id) if parsed.tervik_id else str(gid)
+        eli = str(parsed.tervik_id)
         act = Act(None, eli, title_xml, None, "general", "seadus")
         version = ActVersion(None, 0, eff_from, eff_to, raw.source_url, source_hash,
                              source_global_id=gid)

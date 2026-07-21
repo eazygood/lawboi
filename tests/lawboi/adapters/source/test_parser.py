@@ -87,6 +87,33 @@ def test_parse_act_returns_all_fields():
     assert result.provisions[0].act_version_id == 7
 
 
+TERVIK_ID_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<akt>
+  <metaandmed>
+    <pealkiri keel="et">Toolepingu seadus</pealkiri>
+    <terviktekstiGrupiID>331584</terviktekstiGrupiID>
+    <kehtivus>
+      <kehtivuseAlgus>2009-07-01</kehtivuseAlgus>
+    </kehtivus>
+  </metaandmed>
+  <sisu>
+    <paragrahv nr="1">
+      <loige nr="1"><tekst>Kaeesolev seadus reguleerib toolepingu.</tekst></loige>
+    </paragrahv>
+  </sisu>
+</akt>"""
+
+
+def test_parse_act_reads_tervik_id():
+    result = parse_act(TERVIK_ID_XML, act_version_id=7)
+    assert result.tervik_id == 331584
+
+
+def test_parse_act_tervik_id_none_when_absent():
+    result = parse_act(FULL_SAMPLE_XML, act_version_id=7)
+    assert result.tervik_id is None
+
+
 SAMPLE_XML_WITH_HEADING = b"""<?xml version="1.0" encoding="UTF-8"?>
 <akt>
   <metaandmed>
