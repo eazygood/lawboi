@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     max_history_chars: int = 500
     cache_similarity_threshold: float = 0.97
     cache_retention_days: int = 30
+    cache_version_suffix: str = ""
 
 
 def load_settings() -> Settings:

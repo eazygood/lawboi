@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -53,23 +54,32 @@ def _build_reranker(settings: Settings):
     return CohereRerank(api_key=settings.cohere_api_key, top_n=5)
 
 
+def _compute_cache_version(system_prompt: str, model_name: str, suffix: str) -> str:
+    digest = hashlib.sha256(f"{system_prompt}|{model_name}|{suffix}".encode()).hexdigest()
+    return digest[:16]
+
+
 async def build_container(settings: Settings) -> Container:
     from lawboi.adapters.structured.pool import make_pool
     from lawboi.adapters.structured.postgres import PostgresStore
     from lawboi.adapters.vector.pgvector import PostgresVectorStore
     from lawboi.adapters.vector.answer_cache import PostgresAnswerCache
     from lawboi.adapters.llm.factory import build_llm, resolve_fast_model
+    from lawboi.answer.prompts import SYSTEM_PROMPT
     from lawboi.ingest.embedder import Embedder
 
     pool = await make_pool(settings.database_url, settings.db_pool_min, settings.db_pool_max)
     store = PostgresStore(pool)
     vector = PostgresVectorStore(pool)
     embedder = Embedder()
+    llm = build_llm(settings.llm_model, max_tokens=settings.answer_max_tokens)
+    cache_version = _compute_cache_version(
+        SYSTEM_PROMPT, llm.name, settings.cache_version_suffix)
     cache = PostgresAnswerCache(
         pool, min_similarity=settings.cache_similarity_threshold,
         retention_days=settings.cache_retention_days,
+        cache_version=cache_version,
     )
-    llm = build_llm(settings.llm_model, max_tokens=settings.answer_max_tokens)
     fast_name = resolve_fast_model(settings.llm_fast_model)
     llm_fast = (
         build_llm(fast_name, max_tokens=settings.fast_max_tokens) if fast_name else llm

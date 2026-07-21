@@ -12,7 +12,8 @@ pytestmark = requires_live_postgres
 
 @pytest.fixture
 def cache(pool):
-    return PostgresAnswerCache(pool, min_similarity=0.99, retention_days=30)
+    return PostgresAnswerCache(pool, min_similarity=0.99, retention_days=30,
+                                cache_version="v1")
 
 
 def _vec(x: float) -> list[float]:
@@ -53,8 +54,9 @@ async def test_store_prunes_rows_older_than_retention_days(pool, cache):
         await cur.execute(
             """
             INSERT INTO answer_cache
-                (as_of, query_text, cache_key_text, cache_embedding, answer_payload, created_at)
-            VALUES (%s, 'old', 'old', %s::vector, '{}'::jsonb, now() - interval '60 days')
+                (as_of, query_text, cache_key_text, cache_version, cache_embedding,
+                 answer_payload, created_at)
+            VALUES (%s, 'old', 'old', 'v1', %s::vector, '{}'::jsonb, now() - interval '60 days')
             """,
             (old_as_of, "[" + ",".join(str(x) for x in _vec(0.1)) + "]"),
         )
@@ -63,5 +65,34 @@ async def test_store_prunes_rows_older_than_retention_days(pool, cache):
 
     async with pooled_cursor(pool) as cur:
         await cur.execute("SELECT count(*) FROM answer_cache WHERE as_of = %s", (old_as_of,))
+        row = await cur.fetchone()
+    assert row[0] == 0
+
+
+async def test_find_ignores_row_stored_under_different_version(pool):
+    as_of = date(2026, 7, 17)
+    payload = {"answer": "x", "citations": []}
+    writer = PostgresAnswerCache(pool, min_similarity=0.99, retention_days=30,
+                                  cache_version="v1")
+    await writer.store(_vec(0.5), as_of, "q", "q", payload)
+
+    reader = PostgresAnswerCache(pool, min_similarity=0.99, retention_days=30,
+                                  cache_version="v2")
+    found = await reader.find(_vec(0.5), as_of)
+    assert found is None
+
+
+async def test_clear_wipes_rows_regardless_of_version(pool):
+    as_of = date(2026, 7, 17)
+    payload = {"answer": "x", "citations": []}
+    v1 = PostgresAnswerCache(pool, min_similarity=0.99, retention_days=30, cache_version="v1")
+    v2 = PostgresAnswerCache(pool, min_similarity=0.99, retention_days=30, cache_version="v2")
+    await v1.store(_vec(0.5), as_of, "q", "q", payload)
+    await v2.store(_vec(0.6), as_of, "q2", "q2", payload)
+
+    await v1.clear()
+
+    async with pooled_cursor(pool) as cur:
+        await cur.execute("SELECT count(*) FROM answer_cache")
         row = await cur.fetchone()
     assert row[0] == 0

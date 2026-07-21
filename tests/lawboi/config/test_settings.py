@@ -12,6 +12,7 @@ def test_defaults(monkeypatch):
     assert s.db_pool_min == 5
     assert s.db_pool_max == 50
     assert s.llm_model is None
+    assert s.cache_version_suffix == ""
 
 
 def test_env_override(monkeypatch):
