@@ -1,4 +1,4 @@
-from lawboi.config.composition import Container, build_pipeline
+from lawboi.config.composition import Container, build_pipeline, _compute_cache_version
 from lawboi.pipeline.stages import (
     CitationShortCircuit, ParallelSearch, QueryTranslation, StepBackExpand, Rerank,
 )
@@ -36,3 +36,27 @@ def test_container_holds_services():
     )
     assert c.retrieval and c.answer and c.ingest
     assert c.embedder is not None
+
+
+def test_compute_cache_version_is_deterministic():
+    v1 = _compute_cache_version("prompt text", "gpt-4o", "")
+    v2 = _compute_cache_version("prompt text", "gpt-4o", "")
+    assert v1 == v2
+
+
+def test_compute_cache_version_changes_with_prompt():
+    v1 = _compute_cache_version("prompt A", "gpt-4o", "")
+    v2 = _compute_cache_version("prompt B", "gpt-4o", "")
+    assert v1 != v2
+
+
+def test_compute_cache_version_changes_with_model():
+    v1 = _compute_cache_version("prompt", "gpt-4o", "")
+    v2 = _compute_cache_version("prompt", "claude-opus", "")
+    assert v1 != v2
+
+
+def test_compute_cache_version_changes_with_suffix():
+    v1 = _compute_cache_version("prompt", "gpt-4o", "")
+    v2 = _compute_cache_version("prompt", "gpt-4o", "bump-1")
+    assert v1 != v2
